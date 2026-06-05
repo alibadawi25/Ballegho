@@ -30,7 +30,9 @@ yarn-error.*
 .DS_Store
 *.pem
 
-# local env files
+# env — never commit credentials
+.env
+.env.*
 .env*.local
 
 # typescript
@@ -39,3 +41,14 @@ yarn-error.*
 # generated native folders
 /ios
 /android
+
+# temp / scratch dirs
+.tmp-*/
+*.tmp
+
+# test screenshots (playwright)
+*.png
+*.jpg
+*.jpeg
+!assets/**/*.png
+!assets/**/*.jpg
