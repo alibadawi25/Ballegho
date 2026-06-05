@@ -2,7 +2,7 @@
   "expo": {
     "name": "Ballegho",
     "slug": "ballegho",
-    "version": "1.0.0",
+    "version": "1.0.1",
     "scheme": "ballegho",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
@@ -84,7 +84,9 @@
       "policy": "appVersion"
     },
     "updates": {
-      "url": "https://u.expo.dev/dd9ca626-8ea1-4fde-8383-20420fae02d8"
+      "url": "https://u.expo.dev/dd9ca626-8ea1-4fde-8383-20420fae02d8",
+      "checkAutomatically": "ON_LOAD",
+      "fallbackToCacheTimeout": 0
     }
   }
 }
