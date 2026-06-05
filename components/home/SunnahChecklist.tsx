@@ -4,6 +4,7 @@ import { Feather } from "@expo/vector-icons";
 import type { ActiveSunnah, GroupKey } from "@/hooks/useSunnahs";
 import { useLang } from "@/hooks/useLang";
 import * as Haptics from "expo-haptics";
+import { localDateString } from "@/lib/islamicDate";
 
 const AR_DIGITS = ["٠","١","٢","٣","٤","٥","٦","٧","٨","٩"];
 const toAr = (n: number) => String(n).replace(/[0-9]/g, d => AR_DIGITS[+d]);
@@ -199,6 +200,53 @@ function SunnahRow({
   );
 }
 
+// ── Inline week dots (7-day strip inside the progress card) ───────────
+
+function WeekDots({ activeDates, effectiveToday, isRTL, c, isDark }: {
+  activeDates: Set<string>; effectiveToday: string;
+  isRTL: boolean; c: Colors; isDark: boolean;
+}) {
+  const { t } = useLang();
+  const [y, mo, d] = effectiveToday.split("-").map(Number);
+  const todayDate  = new Date(y, mo - 1, d);
+  const emptyBg    = isDark ? "#0d1929" : "#e8e0d0";
+
+  const days = Array.from({ length: 7 }, (_, i) => {
+    const date = new Date(todayDate);
+    date.setDate(date.getDate() - (6 - i));
+    const dateStr = localDateString(date);
+    return {
+      dateStr,
+      letter:  t.weekdayLetters[date.getDay()],
+      isToday: i === 6,
+      isDone:  activeDates.has(dateStr),
+    };
+  });
+
+  return (
+    <View style={[styles.weekRow, { flexDirection: isRTL ? "row-reverse" : "row", marginTop: 12 }]}>
+      {days.map((day) => (
+        <View key={day.dateStr} style={styles.weekCol}>
+          <Text style={[
+            isRTL ? styles.wLetterAr : styles.wLetterEn,
+            { color: day.isToday ? c.gold : c.inkFaint },
+          ]}>
+            {day.letter}
+          </Text>
+          <View style={[
+            styles.weekDot,
+            day.isDone
+              ? { backgroundColor: c.gold }
+              : { backgroundColor: emptyBg },
+            day.isToday && !day.isDone && { borderWidth: 1.5, borderColor: c.gold },
+          ]} />
+          <View style={[styles.weekTick, { backgroundColor: day.isToday ? c.gold : "transparent" }]} />
+        </View>
+      ))}
+    </View>
+  );
+}
+
 // ── Group section ──────────────────────────────────────────────────────
 
 export function SunnahGroup({
@@ -290,8 +338,10 @@ export function SunnahGroup({
 
 export function DayProgress({
   done, total, streak, isRTL, c,
+  activeDates, effectiveToday, isDark,
 }: {
   done: number; total: number; streak: number; isRTL: boolean; c: Colors;
+  activeDates?: Set<string>; effectiveToday?: string; isDark?: boolean;
 }) {
   const pct = total > 0 ? done / total : 0;
 
@@ -359,9 +409,20 @@ export function DayProgress({
       <View style={[styles.bar, { backgroundColor: c.divider, marginTop: 10 }]}>
         <View style={[
           styles.barFill,
-          { width: `${pct * 100}%` as any, backgroundColor: allDone ? c.gold : c.gold },
+          { width: `${pct * 100}%` as any, backgroundColor: c.gold },
         ]} />
       </View>
+
+      {/* ── Inline 7-day week strip ──────────────────────────── */}
+      {activeDates !== undefined && effectiveToday !== undefined && (
+        <WeekDots
+          activeDates={activeDates}
+          effectiveToday={effectiveToday}
+          isRTL={isRTL}
+          c={c}
+          isDark={isDark ?? false}
+        />
+      )}
     </View>
   );
 }
@@ -440,4 +501,12 @@ const styles = StyleSheet.create({
   streakLabel: { fontSize: 11 },
   bar:         { height: 4, borderRadius: 2, overflow: "hidden" },
   barFill:     { height: "100%", borderRadius: 2 },
+
+  // Inline week dots
+  weekRow:   { justifyContent: "space-between" },
+  weekCol:   { flex: 1, alignItems: "center", gap: 4 },
+  wLetterEn: { fontSize: 8, fontWeight: "600" as const, letterSpacing: 0.2 },
+  wLetterAr: { fontSize: 10 },
+  weekDot:   { width: 22, height: 22, borderRadius: 11 },
+  weekTick:  { width: 3, height: 3, borderRadius: 2 },
 });

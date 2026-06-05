@@ -10,7 +10,7 @@ import { usePrayerCtx } from "@/contexts/PrayerTimesContext";
 import { PrayerStrip } from "@/components/PrayerStrip";
 import { DifficultyRatingCard } from "@/components/DifficultyRatingCard";
 import { SunnahGroup, DayProgress } from "@/components/home/SunnahChecklist";
-import { WeekStrip } from "@/components/home/WeekStrip";
+// WeekStrip now rendered inside DayProgress card
 import MilestoneCard, { MILESTONE_DAYS } from "@/components/MilestoneCard";
 import { useNotifications } from "@/hooks/useNotifications";
 import { isApproachingMaghrib, isPastMaghrib, minutesUntilMaghrib, getEffectiveDate } from "@/lib/islamicDate";
@@ -328,28 +328,18 @@ export default function HomeScreen() {
         </View>
       )}
 
-      {/* ── Today's progress ────────────────────────────────── */}
+      {/* ── Progress + week strip (merged card) ─────────────── */}
       {totalCount > 0 && (
-        <View style={{ paddingHorizontal: 22, marginBottom: 24 }}>
+        <View style={{ paddingHorizontal: 22, marginBottom: 16 }}>
           <DayProgress
             done={doneCount}
             total={totalCount}
             streak={currentStreak}
             isRTL={isRTL}
             c={c}
-          />
-        </View>
-      )}
-
-      {/* ── 7-day strip ─────────────────────────────────────── */}
-      {totalCount > 0 && !loading && (
-        <View style={{ paddingHorizontal: 22, marginBottom: 6, marginTop: 8 }}>
-          <WeekStrip
             activeDates={activeDates}
             effectiveToday={effectiveToday}
-            isRTL={isRTL}
             isDark={isDark}
-            c={c}
           />
         </View>
       )}
@@ -435,41 +425,91 @@ export default function HomeScreen() {
         onDismiss={() => setMilestoneStreak(null)}
       />
 
+      {/* ── Focus card — next sunnah OR all-done ────────────── */}
+      {!loading && totalCount > 0 && (() => {
+        if (doneCount === totalCount) {
+          // All done — celebration card
+          return (
+            <View style={{
+              marginHorizontal: 22, marginBottom: 16,
+              borderRadius: 14, borderWidth: 0.5,
+              borderColor: c.gold + "50", backgroundColor: c.gold + "0e",
+              padding: 16, alignItems: "center", gap: 6,
+            }}>
+              <Text style={{ fontSize: 20 }}>✨</Text>
+              {isRTL ? (
+                <Text style={{ fontFamily: "Amiri_700Bold", fontSize: 20, color: c.gold, writingDirection: "rtl", textAlign: "center" }}>
+                  أتممتَ سننك اليوم
+                </Text>
+              ) : (
+                <Text style={{ fontFamily: "Georgia", fontSize: 17, color: c.gold, textAlign: "center" }}>
+                  All sunnahs done!
+                </Text>
+              )}
+              <Text style={{ fontSize: 12, color: c.inkMuted, textAlign: "center",
+                fontFamily: isRTL ? "Amiri_400Regular" : undefined, lineHeight: 18 }}>
+                {isRTL ? "بارك الله فيك · واصل هذا الجمال" : "Bārak Allāhu fīk · keep it up"}
+              </Text>
+            </View>
+          );
+        }
+
+        // Find first uncompleted sunnah across all groups
+        const nextSunnah = (() => {
+          for (const key of GROUP_ORDER) {
+            const s = groups[key].find(s => !completedIds.has(s.sunnah_id));
+            if (s) return s;
+          }
+          return null;
+        })();
+
+        if (!nextSunnah) return null;
+
+        return (
+          <TouchableOpacity
+            onPress={() => handleToggle(nextSunnah.sunnah_id, false)}
+            activeOpacity={0.85}
+            style={{
+              marginHorizontal: 22, marginBottom: 16,
+              borderRadius: 14, borderWidth: 0.5,
+              borderColor: c.gold + "60", backgroundColor: c.gold,
+              paddingHorizontal: 18, paddingVertical: 14,
+              flexDirection: isRTL ? "row-reverse" : "row",
+              alignItems: "center", gap: 14,
+            }}
+          >
+            <View style={{
+              width: 38, height: 38, borderRadius: 19,
+              borderWidth: 2, borderColor: isDark ? "#0a1422" : "#0e1a2b",
+              alignItems: "center", justifyContent: "center",
+              backgroundColor: "transparent",
+            }}>
+              <Feather name="circle" size={18} color={isDark ? "#0a1422" : "#0e1a2b"} />
+            </View>
+            <View style={{ flex: 1, gap: 2 }}>
+              <Text style={{ fontSize: 8, fontWeight: "600",
+                color: (isDark ? "#0a1422" : "#0e1a2b") + "aa",
+                ...(isRTL ? {} : { letterSpacing: 1.2, textTransform: "uppercase" as const }),
+                textAlign: isRTL ? "right" : "left" }}>
+                {isRTL ? "التالية" : "Up next"}
+              </Text>
+              {isRTL ? (
+                <Text style={{ fontFamily: "Amiri_700Bold", fontSize: 18, color: isDark ? "#0a1422" : "#0e1a2b", writingDirection: "rtl", textAlign: "right" }}>
+                  {nextSunnah.name_ar}
+                </Text>
+              ) : (
+                <Text style={{ fontFamily: "Georgia", fontSize: 16, color: isDark ? "#0a1422" : "#0e1a2b" }}>
+                  {nextSunnah.name_en}
+                </Text>
+              )}
+            </View>
+            <Feather name="check-circle" size={22} color={isDark ? "#0a1422" : "#0e1a2b"} style={{ opacity: 0.6 }} />
+          </TouchableOpacity>
+        );
+      })()}
+
       {/* ── Sunnah checklist ────────────────────────────────── */}
       <View style={{ paddingHorizontal: 22 }}>
-        {/* All-done celebration */}
-        {!loading && totalCount > 0 && doneCount === totalCount && (
-          <View style={{
-            borderRadius: 14,
-            borderWidth: 0.5,
-            borderColor: c.gold + "50",
-            backgroundColor: c.gold + "0e",
-            padding: 16,
-            marginBottom: 18,
-            alignItems: "center",
-            gap: 6,
-          }}>
-            <Text style={{ fontSize: 22 }}>✨</Text>
-            {/* Exclusive styles — English must never get writingDirection/rtl */}
-            {isRTL ? (
-              <Text style={{ fontFamily: "Amiri_700Bold", fontSize: 20, color: c.gold, writingDirection: "rtl", textAlign: "center" }}>
-                أتممتَ سننك اليوم
-              </Text>
-            ) : (
-              <Text style={{ fontFamily: "Georgia", fontSize: 18, color: c.gold, textAlign: "center" }}>
-                All sunnahs done!
-              </Text>
-            )}
-            <Text style={{
-              fontSize: 12, color: c.inkMuted, textAlign: "center",
-              fontFamily: isRTL ? "Amiri_400Regular" : undefined,
-              lineHeight: 18,
-            }}>
-              {isRTL ? "بارك الله فيك · واصل هذا الجمال" : "Bārak Allāhu fīk · keep it up"}
-            </Text>
-          </View>
-        )}
-
         {loading ? (
           <ActivityIndicator color={c.gold} style={{ marginTop: 40 }} />
         ) : totalCount === 0 ? (

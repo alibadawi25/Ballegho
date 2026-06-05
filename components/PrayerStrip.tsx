@@ -95,19 +95,17 @@ export function PrayerStrip({ c }: { c: StripColors }) {
   return (
     <View style={baseCard(c)}>
 
-      {/* Top row: "Next" label ←→ city name */}
+      {/* Top row: "Next" label ←→ city name — compact */}
       <View style={{
         flexDirection: isRTL ? "row-reverse" : "row",
         alignItems: "center",
         justifyContent: "space-between",
-        marginBottom: 12,
+        marginBottom: 8,
       }}>
-        {/* "Next" */}
-        <View style={{ flexDirection: isRTL ? "row-reverse" : "row", alignItems: "center", gap: 5 }}>
-          <Feather name="compass" size={11} color={c.gold} />
+        <View style={{ flexDirection: isRTL ? "row-reverse" : "row", alignItems: "center", gap: 4 }}>
+          <Feather name="compass" size={10} color={c.gold} />
           <Text style={{
-            fontSize: 10,
-            fontWeight: "600",
+            fontSize: 9, fontWeight: "600",
             textTransform: isRTL ? "none" : "uppercase",
             ...(isRTL ? {} : { letterSpacing: 1.1 }),
             color: c.gold,
@@ -115,17 +113,10 @@ export function PrayerStrip({ c }: { c: StripColors }) {
             {t.nextPrayer}
           </Text>
         </View>
-
-        {/* City name */}
         {city ? (
-          <View style={{ flexDirection: isRTL ? "row-reverse" : "row", alignItems: "center", gap: 4 }}>
-            <Feather name="map-pin" size={9} color={c.inkFaint} />
-            <Text style={{
-              fontSize: 10,
-              color: c.inkMuted,
-            }}>
-              {city}
-            </Text>
+          <View style={{ flexDirection: isRTL ? "row-reverse" : "row", alignItems: "center", gap: 3 }}>
+            <Feather name="map-pin" size={8} color={c.inkFaint} />
+            <Text style={{ fontSize: 9, color: c.inkFaint }}>{city}</Text>
           </View>
         ) : null}
       </View>
@@ -168,26 +159,21 @@ export function PrayerStrip({ c }: { c: StripColors }) {
           />
         </View>
 
-        {/* Next prayer — center, prominent */}
+        {/* Next prayer — center, compact */}
         <View style={{ alignItems: "center", flex: 1.6 }}>
           <Text style={{
             fontFamily: isRTL ? undefined : "Georgia",
-            fontSize: isRTL ? 20 : 19,
+            fontSize: isRTL ? 17 : 17,
             fontWeight: isRTL ? "600" : "400",
             color: c.gold,
-            marginBottom: 2,
+            marginBottom: 1,
           }}>
             {nextName}
           </Text>
-          <Text style={{
-            fontFamily: "Georgia",
-            fontSize: 15,
-            color: c.ink,
-            fontWeight: "400",
-          }}>
+          <Text style={{ fontFamily: "Georgia", fontSize: 14, color: c.ink }}>
             {nextTime}
           </Text>
-          <Text style={{ fontSize: 10, color: c.inkMuted, marginTop: 2 }}>
+          <Text style={{ fontSize: 10, color: c.inkMuted, marginTop: 1 }}>
             {countdown}
           </Text>
         </View>
@@ -226,8 +212,8 @@ export function PrayerStrip({ c }: { c: StripColors }) {
       {/* Bottom: thin progress dots */}
       <View style={{
         flexDirection: isRTL ? "row-reverse" : "row",
-        gap: 5,
-        marginTop: 14,
+        gap: 4,
+        marginTop: 10,
         justifyContent: "center",
       }}>
         {PRAYER_ORDER.map((key, i) => {
@@ -255,8 +241,8 @@ export function PrayerStrip({ c }: { c: StripColors }) {
 }
 
 const baseCard = (c: StripColors) => ({
-  padding: 16,
-  borderRadius: 16,
+  padding: 12,
+  borderRadius: 14,
   backgroundColor: c.surface,
   borderWidth: 0.5,
   borderColor: c.divider,
