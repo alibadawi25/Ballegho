@@ -8,7 +8,6 @@
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "automatic",
     "backgroundColor": "#f5efe2",
-    "darkBackgroundColor": "#0e1a2b",
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.ballegho.app"
@@ -72,7 +71,8 @@
           "savePhotosPermission": "Allow Ballegho to save Sunnah cards to your photos.",
           "isAccessMediaLocationEnabled": false
         }
-      ]
+      ],
+      "@react-native-community/datetimepicker"
     ],
     "extra": {
       "router": {},
