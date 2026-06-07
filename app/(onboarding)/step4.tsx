@@ -6,6 +6,7 @@ import { OnboardingShell } from "@/components/onboarding/OnboardingShell";
 import { useOnboarding, type SunnahOption, type ConsistencyLevel } from "@/contexts/OnboardingContext";
 import { supabase } from "@/lib/supabase";
 import { useLang } from "@/hooks/useLang";
+import { localizeNumber } from "@/lib/arabicNumerals";
 
 const C = {
   bg:      "#0e1a2b",
@@ -43,24 +44,30 @@ export default function Step4() {
   const router = useRouter();
   const { t, isRTL } = useLang();
   const s = t.onboarding.s4;
-  const { consistencyLevel, selectedIds, toggleSunnah, canSelectMore } = useOnboarding();
+  const { consistencyLevel, selectedIds, toggleSunnah, canSelectMore, maxSunnahs } = useOnboarding();
   const [sunnahs, setSunnahs] = useState<SunnahOption[]>([]);
   const [loading, setLoading] = useState(true);
   const [showCap, setShowCap] = useState(false);
 
+  // Already-consistent users mark the sunnahs they keep, so show the full
+  // catalogue (all difficulties) and a longer list. Newcomers see an easy,
+  // curated starter set.
+  const isExperienced = consistencyLevel === "consistent";
+
   useEffect(() => {
     async function load() {
-      const difficulties = consistencyLevel
-        ? DIFFICULTY_MAP[consistencyLevel]
-        : [1, 2];
-
-      const { data } = await supabase
+      let query = supabase
         .from("sunnahs")
         .select("id, slug, name_en, name_ar, hadith_text_en, hadith_text_ar, hadith_source, estimated_seconds, difficulty_base, category, time_of_day")
-        .in("difficulty_base", difficulties)
         .eq("is_occasional", false)
         .order("sort_order");
 
+      if (!isExperienced) {
+        const difficulties = consistencyLevel ? DIFFICULTY_MAP[consistencyLevel] : [1, 2];
+        query = query.in("difficulty_base", difficulties);
+      }
+
+      const { data } = await query;
       if (!data) { setLoading(false); return; }
 
       // Sort: starter slugs first
@@ -73,11 +80,11 @@ export default function Step4() {
         return ai - bi;
       });
 
-      setSunnahs(sorted.slice(0, 12)); // show 12 max
+      setSunnahs(sorted.slice(0, isExperienced ? 30 : 12));
       setLoading(false);
     }
     load();
-  }, [consistencyLevel]);
+  }, [consistencyLevel, isExperienced]);
 
   function handleToggle(id: string) {
     if (!canSelectMore && !selectedIds.includes(id)) {
@@ -91,27 +98,29 @@ export default function Step4() {
   return (
     <OnboardingShell step={4}>
       <View style={styles.container}>
-        {/* Header */}
+        {/* Header — copy reframes for already-consistent users */}
         <View style={styles.header}>
           <Text style={isRTL ? styles.eyebrowAr : styles.eyebrow}>{s.eyebrow}</Text>
           <Text style={isRTL ? styles.titleAr : styles.title}>
-            {s.titlePre}
-            <Text style={{ color: C.gold }}>{s.titleGold}</Text>
-            {s.titlePost}
+            {isExperienced ? s.expTitlePre : s.titlePre}
+            <Text style={{ color: C.gold }}>{isExperienced ? s.expTitleGold : s.titleGold}</Text>
+            {isExperienced ? s.expTitlePost : s.titlePost}
           </Text>
-          <Text style={[styles.subtitle, isRTL && styles.subtitleAr]}>{s.subtitle}</Text>
+          <Text style={[styles.subtitle, isRTL && styles.subtitleAr]}>
+            {isExperienced ? s.expSubtitle : s.subtitle}
+          </Text>
         </View>
 
-        {/* Counter */}
+        {/* Counter — dots scale with the cap */}
         <View style={[styles.counter, isRTL && { flexDirection: "row-reverse" }]}>
-          {[0, 1, 2].map((i) => (
+          {Array.from({ length: maxSunnahs }).map((_, i) => (
             <View
               key={i}
               style={[styles.counterDot, selectedIds.length > i && styles.counterDotFilled]}
             />
           ))}
           <Text style={[styles.counterText, isRTL && styles.counterTextAr]}>
-            {selectedIds.length} / 3 {s.selected}
+            {localizeNumber(selectedIds.length, isRTL)} / {localizeNumber(maxSunnahs, isRTL)} {s.selected}
           </Text>
         </View>
 
@@ -120,7 +129,7 @@ export default function Step4() {
           <View style={[styles.capBanner, isRTL && { flexDirection: "row-reverse" }]}>
             <Feather name="info" size={13} color={C.gold} />
             <Text style={[styles.capText, isRTL && styles.capTextAr]}>
-              {s.capText}
+              {isExperienced ? s.expCapText : s.capText}
             </Text>
           </View>
         )}

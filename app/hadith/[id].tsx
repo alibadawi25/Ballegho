@@ -22,6 +22,7 @@ import { useLang } from "@/hooks/useLang";
 import { useFavorites } from "@/hooks/useFavorites";
 import { supabase } from "@/lib/supabase";
 import { colors, type Colors } from "@/constants/theme";
+import { toArabicDigits } from "@/lib/arabicNumerals";
 
 interface HadithRow {
   id:         string;
@@ -32,9 +33,6 @@ interface HadithRow {
   reference:  string | null;
 }
 interface NavItem { id: string; number: number; }
-
-const AR_DIGITS = ["٠", "١", "٢", "٣", "٤", "٥", "٦", "٧", "٨", "٩"];
-const toArabicDigits = (n: number) => String(n).replace(/[0-9]/g, (d) => AR_DIGITS[+d]);
 
 // Map a hadiths.collection key → its i18n collection title.
 const COLLECTION_I18N: Record<string, string> = { nawawi40: "the40" };

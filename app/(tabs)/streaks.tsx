@@ -20,13 +20,10 @@ import { useLang } from "@/hooks/useLang";
 import { useStreaks, type HeatLevel, type ConsistencyItem } from "@/hooks/useStreaks";
 import { usePrayerCtx } from "@/contexts/PrayerTimesContext";
 import { colors, NIGHT, PALETTE, type Colors } from "@/constants/theme";
+import { toArabicDigits } from "@/lib/arabicNumerals";
 
 // Design milestone ladder for this screen (distinct from the celebration set).
 const MILESTONES = [7, 21, 40, 100] as const;
-
-// Eastern Arabic-Indic numerals for the milestone circles in RTL.
-const AR_DIGITS = ["٠", "١", "٢", "٣", "٤", "٥", "٦", "٧", "٨", "٩"];
-const toArabicDigits = (n: number) => String(n).replace(/[0-9]/g, (d) => AR_DIGITS[+d]);
 
 // Grammatical Arabic "N days" for each fixed milestone (3–10 → plural "أيام",
 // 11+ → singular accusative "يوماً", 100 → "يوم"). Avoids the wrong "7 يوم".
@@ -72,7 +69,7 @@ export default function StreaksScreen() {
     >
       {/* ── Header ─────────────────────────────────────────── */}
       <View style={{
-        paddingTop: insets.top + 16,
+        paddingTop: 12,
         paddingHorizontal: 22,
         marginBottom: 20,
         alignItems: isRTL ? "flex-end" : "flex-start",

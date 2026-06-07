@@ -23,6 +23,7 @@ import { extractMatn } from "@/lib/hadithUtils";
 import { supabase } from "@/lib/supabase";
 import { colors, type Colors } from "@/constants/theme";
 import { COLLECTIONS, collectionAccent, type CollectionKey } from "@/constants/collections";
+import { toArabicDigits } from "@/lib/arabicNumerals";
 
 interface CollectionItem {
   id:                string;
@@ -37,10 +38,6 @@ function fmtDuration(sec: number): string | null {
   if (sec < 60) return `${sec}s`;
   return `${Math.round(sec / 60)}m`;
 }
-
-// Eastern Arabic-Indic digits for counts shown in RTL.
-const AR_DIGITS = ["٠", "١", "٢", "٣", "٤", "٥", "٦", "٧", "٨", "٩"];
-const toArabicDigits = (n: number) => String(n).replace(/[0-9]/g, (d) => AR_DIGITS[+d]);
 
 export default function CollectionScreen() {
   const { key }  = useLocalSearchParams<{ key: string }>();

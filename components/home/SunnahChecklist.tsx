@@ -5,9 +5,7 @@ import type { ActiveSunnah, GroupKey } from "@/hooks/useSunnahs";
 import { useLang } from "@/hooks/useLang";
 import * as Haptics from "expo-haptics";
 import { localDateString } from "@/lib/islamicDate";
-
-const AR_DIGITS = ["٠","١","٢","٣","٤","٥","٦","٧","٨","٩"];
-const toAr = (n: number) => String(n).replace(/[0-9]/g, d => AR_DIGITS[+d]);
+import { toArabicDigits as toAr } from "@/lib/arabicNumerals";
 
 interface Colors {
   surface: string; divider: string; ink: string;
@@ -250,14 +248,14 @@ function WeekDots({ activeDates, effectiveToday, isRTL, c, isDark }: {
 // ── Group section ──────────────────────────────────────────────────────
 
 export function SunnahGroup({
-  groupKey, sunnahs, completedIds, anchorId,
+  groupKey, sunnahs, completedIds, anchorIds,
   justCompletedId, currentStreak,
   isRTL, c, onToggle, onPress,
 }: {
   groupKey:        GroupKey;
   sunnahs:         ActiveSunnah[];
   completedIds:    Set<string>;
-  anchorId:        string | null;
+  anchorIds:       Set<string>;
   justCompletedId: string | null;
   currentStreak:   number;
   isRTL:           boolean;
@@ -307,7 +305,7 @@ export function SunnahGroup({
         borderLeftWidth: allDone ? 0 : 0,
       }]}>
         {sunnahs.map((s, i) => {
-          const isAnchor    = s.sunnah_id === anchorId;
+          const isAnchor    = anchorIds.has(s.sunnah_id);
           const isDone      = completedIds.has(s.sunnah_id);
           const showBless   = isAnchor && s.sunnah_id === justCompletedId && isDone;
 

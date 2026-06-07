@@ -73,7 +73,7 @@ export function useSunnahs(maghribTime?: Date | null) {
   const [groups,         setGroups]         = useState<SunnahGroups>({ morning: [], daily: [], evening: [], night: [] });
   const [completedIds,   setCompletedIds]   = useState<Set<string>>(new Set());
   const [activeDates,    setActiveDates]    = useState<Set<string>>(new Set());
-  const [anchorId,       setAnchorId]       = useState<string | null>(null);
+  const [anchorIds,      setAnchorIds]      = useState<Set<string>>(new Set());
   const [loading,        setLoading]        = useState(true);
   const [totalCount,     setTotalCount]     = useState(0);
   const [currentStreak,  setCurrentStreak]  = useState(0);
@@ -148,7 +148,7 @@ export function useSunnahs(maghribTime?: Date | null) {
     const doneSet = new Set<string>((completions ?? []).map((c: any) => c.sunnah_id));
 
     const newGroups: SunnahGroups = { morning: [], daily: [], evening: [], night: [] };
-    let anchor: string | null = null;
+    const anchors = new Set<string>();
 
     for (const row of (sunnahRows ?? [])) {
       const s = Array.isArray(row.sunnahs) ? row.sunnahs[0] : row.sunnahs;
@@ -170,7 +170,17 @@ export function useSunnahs(maghribTime?: Date | null) {
       };
 
       newGroups[toGroup(s.time_of_day)].push(sunnah);
-      if (row.is_anchor) anchor = row.sunnah_id;
+      if (row.is_anchor) anchors.add(row.sunnah_id);
+    }
+
+    // Order each group: anchors first, then easiest (lowest difficulty), then
+    // by original position as a stable tiebreak.
+    for (const key of Object.keys(newGroups) as GroupKey[]) {
+      newGroups[key].sort((a, b) =>
+        (Number(b.is_anchor) - Number(a.is_anchor)) ||
+        (a.difficulty_effective - b.difficulty_effective) ||
+        (a.position - b.position)
+      );
     }
 
     const total = Object.values(newGroups).reduce((acc, g) => acc + g.length, 0);
@@ -182,7 +192,7 @@ export function useSunnahs(maghribTime?: Date | null) {
     setGroups(newGroups);
     setCompletedIds(doneSet);
     setActiveDates(weekDates);
-    setAnchorId(anchor);
+    setAnchorIds(anchors);
     setTotalCount(total);
     setCurrentStreak(streakRow?.current_streak  ?? 0);
     setLongestStreak(streakRow?.longest_streak  ?? 0);
@@ -321,14 +331,24 @@ export function useSunnahs(maghribTime?: Date | null) {
     }
   }, [user?.id]);
 
+  // Count ONLY active sunnahs as "done today" — spontaneous one-off completions
+  // (sunnahs not in the active list) live in completedIds too, but they must not
+  // inflate the day's progress or trip the "all done" celebration.
+  const activeIds = new Set<string>();
+  for (const k of Object.keys(groups) as GroupKey[]) {
+    for (const sdef of groups[k]) activeIds.add(sdef.sunnah_id);
+  }
+  let activeDoneCount = 0;
+  for (const id of completedIds) if (activeIds.has(id)) activeDoneCount++;
+
   return {
     groups,
     completedIds,
     activeDates,
-    anchorId,
+    anchorIds,
     loading,
     totalCount,
-    doneCount:     completedIds.size,
+    doneCount:     activeDoneCount,
     currentStreak,
     longestStreak,
     complete,

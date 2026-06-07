@@ -19,12 +19,10 @@ import { useFavorites } from "@/hooks/useFavorites";
 import { extractMatn } from "@/lib/hadithUtils";
 import { supabase } from "@/lib/supabase";
 import { colors, type Colors } from "@/constants/theme";
+import { toArabicDigits } from "@/lib/arabicNumerals";
 
 interface SavedSunnah { id: string; name_en: string; name_ar: string; category: string; estimated_seconds: number; }
 interface SavedHadith { id: string; number: number; arabic: string | null; english: string | null; }
-
-const AR_DIGITS = ["٠", "١", "٢", "٣", "٤", "٥", "٦", "٧", "٨", "٩"];
-const toArabicDigits = (n: number) => String(n).replace(/[0-9]/g, (d) => AR_DIGITS[+d]);
 
 function fmtDuration(sec: number): string | null {
   if (!sec) return null;

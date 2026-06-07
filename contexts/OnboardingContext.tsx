@@ -56,10 +56,12 @@ interface OnboardingState {
   setWakeTime:      (d: Date) => void;
   setSleepTime:     (d: Date) => void;
   setConsistency:   (l: ConsistencyLevel) => void;
-  /** Adds or removes a sunnah from selectedIds (max 3). */
+  /** Adds or removes a sunnah from selectedIds (up to maxSunnahs). */
   toggleSunnah:     (id: string) => void;
   setAnchor:        (id: string) => void;
-  /** True when the user can still select more sunnahs (< 3 selected). */
+  /** Max selectable — higher for already-consistent users (set in step3). */
+  maxSunnahs:       number;
+  /** True when the user can still select more sunnahs (< maxSunnahs). */
   canSelectMore:    boolean;
 }
 
@@ -71,7 +73,13 @@ const DEFAULT_WAKE_MIN   = 30;  // 06:30
 const DEFAULT_SLEEP_HOUR = 23;
 const DEFAULT_SLEEP_MIN  = 0;   // 23:00
 
-const MAX_SUNNAHS = 3;          // app philosophy: start small, be consistent
+// App philosophy: start small. Beginners / "some habits" start with 3. Users who
+// say they're already consistent (step3) can mark the several sunnahs they already
+// keep, seeding a larger baseline the unlock engine then grows from.
+const MAX_BEGINNER   = 3;
+const MAX_EXPERIENCED = 7;
+const maxFor = (level: ConsistencyLevel | null) =>
+  level === "consistent" ? MAX_EXPERIENCED : MAX_BEGINNER;
 
 // ─── Context ──────────────────────────────────────────────────────────────────
 
@@ -90,6 +98,8 @@ export function OnboardingProvider({ children }: { children: React.ReactNode }) 
   const [selectedIds,      setSelected]   = useState<string[]>([]);
   const [anchorId,         setAnchor]     = useState<string | null>(null);
 
+  const maxSunnahs = maxFor(consistencyLevel);
+
   function toggleSunnah(id: string) {
     setSelected((prev) => {
       if (prev.includes(id)) {
@@ -98,7 +108,7 @@ export function OnboardingProvider({ children }: { children: React.ReactNode }) 
         return prev.filter((x) => x !== id);
       }
       // Hard cap — silently ignore if already at max
-      if (prev.length >= MAX_SUNNAHS) return prev;
+      if (prev.length >= maxSunnahs) return prev;
       return [...prev, id];
     });
   }
@@ -115,7 +125,8 @@ export function OnboardingProvider({ children }: { children: React.ReactNode }) 
       setConsistency,
       toggleSunnah,
       setAnchor,
-      canSelectMore: selectedIds.length < MAX_SUNNAHS,
+      maxSunnahs,
+      canSelectMore: selectedIds.length < maxSunnahs,
     }}>
       {children}
     </Ctx.Provider>

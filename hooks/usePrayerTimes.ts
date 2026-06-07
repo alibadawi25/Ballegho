@@ -65,6 +65,7 @@ function getParams(method: CalcMethod, countryCode?: string | null) {
     case "Karachi":      return CalculationMethod.Karachi();
     case "NorthAmerica": return CalculationMethod.NorthAmerica();
     case "Singapore":    return CalculationMethod.Singapore();
+    case "Tehran":       return CalculationMethod.Tehran();
     default:             return CalculationMethod.MuslimWorldLeague();
   }
 }

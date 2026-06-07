@@ -15,6 +15,9 @@ import {
 import * as SplashScreen from "expo-splash-screen";
 import { SettingsProvider } from "@/contexts/SettingsContext";
 import { AuthProvider, useAuth } from "@/contexts/AuthContext";
+import { NurProvider } from "@/contexts/NurContext";
+import NurReward from "@/components/NurReward";
+import FirstNurTip from "@/components/FirstNurTip";
 import { supabase } from "@/lib/supabase";
 
 SplashScreen.preventAutoHideAsync();
@@ -155,6 +158,7 @@ export default function RootLayout() {
   return (
     <SettingsProvider>
       <AuthProvider>
+        <NurProvider>
         {/* Stack renders first so the navigator is always present when
             AuthGate calls router.replace(). AuthGate sits on top as an
             overlay and returns null once it has routed. */}
@@ -163,8 +167,12 @@ export default function RootLayout() {
           <Stack.Screen name="(onboarding)" />
           <Stack.Screen name="(tabs)"       />
           <Stack.Screen name="sunnah/[id]"  options={{ animation: "slide_from_right" }} />
+          <Stack.Screen name="adhkar/[slug]" options={{ animation: "slide_from_right" }} />
         </Stack>
         <AuthGate />
+        <NurReward />
+        <FirstNurTip />
+        </NurProvider>
       </AuthProvider>
     </SettingsProvider>
   );

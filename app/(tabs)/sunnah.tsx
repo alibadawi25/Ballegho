@@ -95,7 +95,7 @@ export default function SunnahLibraryScreen() {
     <View style={{ flex: 1, backgroundColor: c.bg }}>
       <ScrollView
         showsVerticalScrollIndicator={false}
-        contentContainerStyle={{ paddingTop: insets.top + 16, paddingBottom: insets.bottom + 32 }}
+        contentContainerStyle={{ paddingTop: 12, paddingBottom: insets.bottom + 32 }}
         keyboardShouldPersistTaps="handled"
       >
         {/* ── Header ─────────────────────────────────────────── */}

@@ -51,7 +51,8 @@ export type CalcMethod =
   | "Turkey"
   | "Karachi"
   | "NorthAmerica"
-  | "Singapore";
+  | "Singapore"
+  | "Tehran";
 
 interface SettingsState {
   // Raw prefs (what the user explicitly chose, including "system")

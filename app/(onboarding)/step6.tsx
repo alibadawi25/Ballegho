@@ -79,7 +79,9 @@ export default function Step6() {
         sleep_time:          `${String(sleepTime.getHours()).padStart(2,"0")}:${String(sleepTime.getMinutes()).padStart(2,"0")}`,
         consistency_level:   consistencyLevel,
         is_morning_person:   wakeTime.getHours() < 8,
-        sunnah_capacity:     3,
+        // Baseline capacity = however many they committed to (experienced users
+        // pick more). The progressive-unlock engine grows it from here.
+        sunnah_capacity:     Math.max(3, selectedIds.length),
         onboarding_complete: true,
         updated_at:          new Date().toISOString(),
       }),

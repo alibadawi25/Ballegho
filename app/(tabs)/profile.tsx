@@ -369,12 +369,12 @@ function PracticeSheet({
 }
 
 function SunnahsSheet({
-  visible, sunnahs, c, onSetAnchor, onRemove, onClose,
+  visible, sunnahs, c, onToggleAnchor, onRemove, onClose,
 }: {
   visible: boolean; sunnahs: ProfileSunnah[]; c: C;
-  onSetAnchor: (id: string) => void;
-  onRemove:    (s: ProfileSunnah) => void;
-  onClose:     () => void;
+  onToggleAnchor: (id: string) => void;
+  onRemove:       (s: ProfileSunnah) => void;
+  onClose:        () => void;
 }) {
   const { isRTL } = useLang();
 
@@ -395,8 +395,8 @@ function SunnahsSheet({
                 <View style={[s.sunnahRow, isRTL && { flexDirection: "row-reverse" }]}>
                   {/* Anchor */}
                   <TouchableOpacity
-                    onPress={() => !sn.is_anchor && onSetAnchor(sn.sunnah_id)}
-                    activeOpacity={sn.is_anchor ? 1 : 0.6}
+                    onPress={() => onToggleAnchor(sn.sunnah_id)}
+                    activeOpacity={0.6}
                     hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
                   >
                     <Feather name="anchor" size={16} color={sn.is_anchor ? c.gold : c.inkFaint} />
@@ -427,8 +427,8 @@ function SunnahsSheet({
         {/* Hint */}
         <Text style={{ fontSize: 11, color: c.inkFaint, textAlign: "center", paddingBottom: 24, paddingHorizontal: 24 }}>
           {isRTL
-            ? "اضغط على ⚓ لتغيير سنتك المرساة — وهي ما تحمي سلسلتك."
-            : "Tap ⚓ to change your anchor — the one sunnah that protects your streak."}
+            ? "اضغط على ⚓ لتحديد سننك المرساة — وهي ما تحمي سلسلتك. أبقِ واحدة على الأقل."
+            : "Tap ⚓ to set your anchors — the core sunnahs that protect your streak. Keep at least one."}
         </Text>
       </ScrollView>
     </Sheet>
@@ -516,6 +516,7 @@ const CALC_OPTS = [
   { value: "Karachi",           en: "Karachi (S. Asia)",    ar: "كراتشي (جنوب آسيا)"    },
   { value: "NorthAmerica",      en: "North America (ISNA)", ar: "أمريكا الشمالية"        },
   { value: "Singapore",         en: "Singapore",            ar: "سنغافورة"               },
+  { value: "Tehran",            en: "Tehran (Iran)",        ar: "طهران (إيران)"          },
 ] as { value: CalcMethod; en: string; ar: string }[];
 
 function PrayerSheet({
@@ -658,11 +659,29 @@ export default function ProfileScreen() {
       .update({ consistency_level: level }).eq("user_id", user!.id);
   }
 
-  // ── Save: anchor ──────────────────────────────────────────────────────────
-  async function setAnchor(sunnahId: string) {
-    setSunnahs((p) => p.map((s) => ({ ...s, is_anchor: s.sunnah_id === sunnahId })));
-    await supabase.from("user_sunnahs").update({ is_anchor: false }).eq("user_id", user!.id);
-    await supabase.from("user_sunnahs").update({ is_anchor: true })
+  // ── Toggle an anchor ───────────────────────────────────────────────────────
+  // Anchors are a small core (one or more). Tapping ⚓ adds/removes — but at
+  // least one anchor must always remain to protect the streak.
+  async function toggleAnchor(sunnahId: string) {
+    const sn = sunnahs.find((s) => s.sunnah_id === sunnahId);
+    if (!sn) return;
+    const next = !sn.is_anchor;
+
+    if (!next) {
+      const anchorCount = sunnahs.filter((s) => s.is_anchor).length;
+      if (anchorCount <= 1) {
+        Alert.alert(
+          isRTL ? "أبقِ مرساةً واحدة" : "Keep one anchor",
+          isRTL ? "يجب أن تبقى سنة مرساة واحدة على الأقل لحماية سلسلتك."
+                : "Keep at least one anchor to protect your streak.",
+          [{ text: "OK" }],
+        );
+        return;
+      }
+    }
+
+    setSunnahs((p) => p.map((s) => (s.sunnah_id === sunnahId ? { ...s, is_anchor: next } : s)));
+    await supabase.from("user_sunnahs").update({ is_anchor: next })
       .eq("user_id", user!.id).eq("sunnah_id", sunnahId);
   }
 
@@ -671,7 +690,7 @@ export default function ProfileScreen() {
     if (sn.is_anchor) {
       Alert.alert(
         isRTL ? "لا يمكن الإزالة" : "Cannot remove",
-        isRTL ? "هذه هي سنتك المرساة. اختر مرساة أخرى أولاً." : "This is your anchor sunnah. Set a different anchor first.",
+        isRTL ? "هذه سنة مرساة. ألغِ تثبيتها أولاً (اضغط ⚓)." : "This is an anchor. Un-anchor it first (tap ⚓).",
         [{ text: "OK" }],
       );
       return;
@@ -731,7 +750,7 @@ export default function ProfileScreen() {
       >
         {/* ── Profile header ─────────────────────────────────────────── */}
         <View style={[s.header, {
-          paddingTop: insets.top + 24,
+          paddingTop: 20,
           backgroundColor: c.surface,
           borderBottomColor: c.divider,
         }]}>
@@ -841,7 +860,7 @@ export default function ProfileScreen() {
       />
       <SunnahsSheet
         visible={modal === "sunnahs"} sunnahs={sunnahs} c={c}
-        onSetAnchor={setAnchor} onRemove={removeSunnah} onClose={() => setModal(null)}
+        onToggleAnchor={toggleAnchor} onRemove={removeSunnah} onClose={() => setModal(null)}
       />
       <LanguageSheet   visible={modal === "language"}   c={c} onClose={() => setModal(null)} />
       <AppearanceSheet visible={modal === "appearance"} c={c} onClose={() => setModal(null)} />

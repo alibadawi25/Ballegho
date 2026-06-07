@@ -1,7 +1,9 @@
+import { View } from "react-native";
 import { Tabs } from "expo-router";
 import { Feather } from "@expo/vector-icons";
 import { useLang } from "@/hooks/useLang";
 import { PrayerTimesProvider } from "@/contexts/PrayerTimesContext";
+import GlobalHeader from "@/components/GlobalHeader";
 
 export default function TabsLayout() {
   const { t, isDark } = useLang();
@@ -13,6 +15,9 @@ export default function TabsLayout() {
 
   return (
     <PrayerTimesProvider>
+    <View style={{ flex: 1, backgroundColor: bg }}>
+    {/* Persistent global header — stays pinned while each tab scrolls. */}
+    <GlobalHeader />
     <Tabs
       screenOptions={{
         headerShown: false,
@@ -78,6 +83,7 @@ export default function TabsLayout() {
         }}
       />
     </Tabs>
+    </View>
     </PrayerTimesProvider>
   );
 }

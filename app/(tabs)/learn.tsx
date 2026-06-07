@@ -149,7 +149,7 @@ export default function LearnScreen() {
       <ScrollView
         showsVerticalScrollIndicator={false}
         contentContainerStyle={{
-          paddingTop: insets.top + 16,
+          paddingTop: 12,
           paddingBottom: insets.bottom + 32,
         }}
       >

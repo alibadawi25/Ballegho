@@ -67,6 +67,43 @@ export const strings = {
       blessingDay:     "Day",
     },
 
+    // Adaptive coach (Today screen — unlock / reduce / recover)
+    coach: {
+      unlockEyebrow:  "Unlocked",
+      unlockTitle:    "You're ready for one more",
+      unlockBody:     "You've been consistent, māshāʾAllāh. Choose one gentle sunnah to add to your day:",
+      reduceEyebrow:  "Lighten the load",
+      reduceTitle:    "Busy stretch?",
+      reduceBody:     "Protect your streak — keep your anchor and pause a couple for now. You can pick them back up anytime.",
+      reduceCta:      "Pause these for now",
+      recoverEyebrow: "Welcome back",
+      recoverTitle:   "Pick up where you left off",
+      recoverBody:    "The chain isn't broken — it's been waiting for you. Restart with just your anchor and build from there.",
+      recoverCta:     "Restart gently",
+    },
+
+    // Nūr (points)
+    nur: {
+      label:       "Nūr",
+      balance:     "Balance",
+      unlock:      "Unlock",
+      unlockTitle: "Unlock this theme",
+      notEnough:   "Not enough Nūr yet — keep going.",
+      cancel:      "Cancel",
+    },
+
+    // First-Nūr explainer (one-time tip)
+    nurTip: {
+      title:     "You earned your first Nūr ✨",
+      body:      "Nūr (نور — \"light\") grows as you stay consistent and convey the good. It's just encouragement to keep going — never a measure of your worship.",
+      earnTitle: "Earn Nūr by",
+      earnDo:    "Doing a sunnah",
+      earnExtra: "Trying an extra one",
+      earnShare: "Sharing a sunnah",
+      spend:     "Spend it on beautiful share-card themes — more coming soon, in shāʾ Allāh.",
+      cta:       "Let's go",
+    },
+
     // Streaks / Progress tab
     streaks: {
       eyebrow:        "Your journey",
@@ -101,6 +138,30 @@ export const strings = {
       confirmRemove:"Remove sunnah",
       confirmMsg:   "Remove from your practice?",
       cancel:       "Cancel",
+      // Counter (sebha) interaction
+      tapToCount:   "Tap to count",
+      counterDone:  "Completed for today",
+      reset:        "Reset",
+      of:           "of",
+      markNotDone:  "Mark as not done today",
+      willUnlock:   "Ballegho adds new sunnahs for you as you stay consistent — keep going and this one may be unlocked soon.",
+      didOnce:      "I did this once",
+      didOnceDone:  "Done once today ✓",
+      startSession: "Start session",
+      continueSession: "Continue session",
+      sessionDoneToday: "Today's session is complete ✓",
+    },
+
+    // Adhkār playlist player
+    adhkar: {
+      reward:       "Reward",
+      upNext:       "Up next",
+      of:           "of",
+      times:        "×",
+      complete:     "Session complete",
+      completeSub:  "May Allah accept it from you.",
+      backToAll:    "Done",
+      empty:        "This session has no adhkār yet.",
     },
 
     // Milestone celebration card (shown when global streak hits 7 / 14 / 21 / 40 / 100)
@@ -258,6 +319,12 @@ export const strings = {
         subtitle:  "You can always add more. Small steps build lasting habits.",
         selected:  "selected",
         capText:   "Start with 3. The Prophet ﷺ said the most beloved deeds are the most consistent, even if few.",
+        // Variant shown to already-consistent users (step3 = "Looking to deepen")
+        expTitlePre:  "Mark the sunnahs\nyou ",
+        expTitleGold: "already keep",
+        expTitlePost: ".",
+        expSubtitle:  "These become your daily baseline — Ballegho grows your practice from here.",
+        expCapText:   "Pick the ones you already do consistently — up to 7. You'll unlock more over time.",
       },
 
       // step5 — anchor sunnah
@@ -351,6 +418,43 @@ export const strings = {
       blessingDay:     "اليوم الـ",
     },
 
+    // Adaptive coach (Today screen — unlock / reduce / recover)
+    coach: {
+      unlockEyebrow:  "فُتِحت",
+      unlockTitle:    "أنت جاهز لسنّة أخرى",
+      unlockBody:     "داومتَ فأحسنت، ما شاء الله. اختَر سنّة لطيفة واحدة تضيفها إلى يومك:",
+      reduceEyebrow:  "خفّف الحِمل",
+      reduceTitle:    "أيام مزدحمة؟",
+      reduceBody:     "احمِ سلسلتك — أبقِ سنتك المرساة وأوقف سنّتين مؤقتًا. يمكنك العودة إليها متى شئت.",
+      reduceCta:      "أوقفها مؤقتًا",
+      recoverEyebrow: "أهلًا بعودتك",
+      recoverTitle:   "أكمِل من حيث توقّفت",
+      recoverBody:    "السلسلة لم تنقطع — إنها تنتظرك. ابدأ من جديد بسنتك المرساة وحدها، وابنِ من هناك.",
+      recoverCta:     "ابدأ برِفق",
+    },
+
+    // Nūr (النقاط)
+    nur: {
+      label:       "نور",
+      balance:     "الرصيد",
+      unlock:      "افتح",
+      unlockTitle: "افتح هذه السمة",
+      notEnough:   "لا يكفي النور بعد — واصِل.",
+      cancel:      "إلغاء",
+    },
+
+    // شرح النور لأول مرة (تلميح يظهر مرة واحدة)
+    nurTip: {
+      title:     "حصلتَ على أول نور لك ✨",
+      body:      "النور يزداد كلّما داومتَ وبلّغتَ الخير. إنما هو تشجيعٌ لتستمرّ — وليس مقياسًا لعبادتك.",
+      earnTitle: "اكسب النور بـ",
+      earnDo:    "أداء سنة",
+      earnExtra: "تجربة سنة إضافية",
+      earnShare: "مشاركة سنة",
+      spend:     "أنفِقه على سمات جميلة لبطاقة المشاركة — والمزيد قريبًا إن شاء الله.",
+      cta:       "هيا بنا",
+    },
+
     // Streaks / Progress tab
     streaks: {
       eyebrow:        "رحلتك",
@@ -385,6 +489,30 @@ export const strings = {
       confirmRemove:"إزالة السنة",
       confirmMsg:   "إزالة من ممارستك؟",
       cancel:       "إلغاء",
+      // Counter (sebha) interaction
+      tapToCount:   "اضغط للعدّ",
+      counterDone:  "تمّ اليوم",
+      reset:        "إعادة",
+      of:           "من",
+      markNotDone:  "وضع كغير مُنجَز اليوم",
+      willUnlock:   "يضيف لك بلّغوا سننًا جديدة كلّما داومت — واصِل وقد تُفتح لك هذه السنة قريبًا.",
+      didOnce:      "فعلتُها مرّة",
+      didOnceDone:  "فُعِلت مرّة اليوم ✓",
+      startSession: "ابدأ الجلسة",
+      continueSession: "تابِع الجلسة",
+      sessionDoneToday: "اكتملت جلسة اليوم ✓",
+    },
+
+    // Adhkār playlist player
+    adhkar: {
+      reward:       "الفضل",
+      upNext:       "التالي",
+      of:           "من",
+      times:        "×",
+      complete:     "اكتملت الجلسة",
+      completeSub:  "تقبّل الله منك.",
+      backToAll:    "تمّ",
+      empty:        "لا توجد أذكار في هذه الجلسة بعد.",
     },
 
     // Milestone celebration card
@@ -542,6 +670,12 @@ export const strings = {
         subtitle:  "يمكنك إضافة المزيد دائمًا. الخطوات الصغيرة تبني عادات راسخة.",
         selected:  "مختارة",
         capText:   "ابدأ بثلاث. قال النبي ﷺ إن أحب الأعمال أدومها وإن قلّ.",
+        // نسخة تظهر لمن يواظب بالفعل (الخطوة ٣ = "أريد التعمّق")
+        expTitlePre:  "اختَر السنن\nالتي ",
+        expTitleGold: "تواظب عليها",
+        expTitlePost: ".",
+        expSubtitle:  "ستكون هذه أساس يومك، ويبني بلّغوا ممارستك انطلاقًا منها.",
+        expCapText:   "اختر ما تداوم عليه فعلًا — حتى سبع سنن. ستُفتح لك المزيد مع الوقت.",
       },
 
       // step5 — anchor sunnah

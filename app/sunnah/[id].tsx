@@ -33,10 +33,12 @@ const getMediaLibrary = () => require("expo-media-library") as typeof import("ex
 import { useLang } from "@/hooks/useLang";
 import { useAuth } from "@/contexts/AuthContext";
 import { useFavorites } from "@/hooks/useFavorites";
+import { useNur } from "@/contexts/NurContext";
 import { supabase } from "@/lib/supabase";
 import { TYPE, colors } from "@/constants/theme";
 import SunnahShareCard, { type ShareableSunnah, type ShareTheme } from "@/components/SunnahShareCard";
 import ThemePicker from "@/components/ThemePicker";
+import SebhaCounter from "@/components/SebhaCounter";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -54,6 +56,8 @@ interface SunnahData {
   time_of_day:     string;
   estimated_seconds: number;
   difficulty_base: number;
+  interaction_type: string;          // 'check' | 'counter' | 'playlist'
+  repetitions:     number | null;    // target count when interaction_type = 'counter'
 }
 
 interface UserData {
@@ -111,6 +115,7 @@ export default function SunnahDetailScreen() {
   const { t, isRTL, isDark } = useLang();
   const c = colors(isDark);
   const { isFavorite, toggle: toggleFav } = useFavorites();
+  const { awardShare, reload: reloadNur } = useNur();
 
   // sunnah/[id] is outside the (tabs) tree so it cannot use PrayerTimesContext.
   // Call usePrayerTimes directly — geolocation is already cached by this point.
@@ -123,6 +128,12 @@ export default function SunnahDetailScreen() {
   const [doneToday,    setDoneToday]    = useState(false);
   const [loading,      setLoading]      = useState(true);
   const [toggling,     setToggling]     = useState(false);
+
+  // Counter (sebha) state — current bead count for today, plus a ref holding the
+  // full adhkar_sessions.counts object so we can merge our key without clobbering
+  // other sunnahs' counts on upsert.
+  const [count,    setCount]    = useState(0);
+  const countsRef               = useRef<Record<string, number>>({});
 
   // Share state
   const [shareVisible, setShareVisible] = useState(false);
@@ -144,6 +155,7 @@ export default function SunnahDetailScreen() {
       { data: userSunnahRow },
       { data: statsRow },
       { data: completionRow },
+      { data: sessionRow },
     ] = await Promise.all([
       supabase.from("sunnahs").select("*").eq("id", id).single(),
       supabase.from("user_sunnahs")
@@ -158,9 +170,18 @@ export default function SunnahDetailScreen() {
         .select("sunnah_id")
         .eq("user_id", user.id).eq("sunnah_id", id).eq("completed_date", getToday())
         .maybeSingle(),
+      supabase.from("adhkar_sessions")
+        .select("counts")
+        .eq("user_id", user.id).eq("session_date", getToday())
+        .maybeSingle(),
     ]);
 
     if (sunnahRow) setSunnah(sunnahRow as SunnahData);
+
+    // Hydrate today's bead count for counter-type sunnahs.
+    countsRef.current = (sessionRow?.counts as Record<string, number> | undefined) ?? {};
+    setCount(countsRef.current[id] ?? 0);
+
     setUserData({
       is_anchor:          userSunnahRow?.is_anchor        ?? false,
       is_active:          userSunnahRow?.is_active        ?? false,
@@ -175,72 +196,103 @@ export default function SunnahDetailScreen() {
 
   useEffect(() => { load(); }, [load]);
 
-  // ── Toggle today's completion ─────────────────────────────────────────────
+  // ── Refresh the per-sunnah stats display after a completion change ─────────
+  async function refreshStats() {
+    if (!user || !sunnah) return;
+    const { data: fresh } = await supabase
+      .from("user_sunnah_stats")
+      .select("current_streak, longest_streak, total_completions, completion_rate_7d")
+      .eq("user_id", user.id).eq("sunnah_id", sunnah.id)
+      .maybeSingle();
+    if (fresh) {
+      setUserData((prev) => prev ? {
+        ...prev,
+        current_streak:     fresh.current_streak     ?? prev.current_streak,
+        longest_streak:     fresh.longest_streak     ?? prev.longest_streak,
+        total_completions:  fresh.total_completions  ?? prev.total_completions,
+        completion_rate_7d: fresh.completion_rate_7d ?? prev.completion_rate_7d,
+      } : prev);
+    }
+  }
+
+  // ── Mark today complete (shared by the check button and the counter) ──────
+  async function completeToday() {
+    if (!user || !sunnah) return;
+    const today = getToday();
+    setDoneToday(true);
+    await supabase.from("daily_completions").upsert(
+      { user_id: user.id, sunnah_id: sunnah.id, completed_date: today },
+      { onConflict: "user_id,sunnah_id,completed_date" },
+    );
+    await Promise.all([
+      supabase.rpc("record_sunnah_completion", { p_user_id: user.id, p_sunnah_id: sunnah.id }),
+      supabase.rpc("update_user_streak",        { p_user_id: user.id, p_effective_date: today }),
+    ]);
+    await refreshStats();
+    reloadNur();   // completion (incl. spontaneous) awarded Nūr — refresh live
+  }
+
+  // ── Undo today's completion (recomputes streaks from history) ─────────────
+  async function uncompleteToday() {
+    if (!user || !sunnah) return;
+    const today = getToday();
+    setDoneToday(false);
+    await supabase.from("daily_completions")
+      .delete()
+      .eq("user_id", user.id)
+      .eq("sunnah_id", sunnah.id)
+      .eq("completed_date", today);
+    await Promise.all([
+      supabase.rpc("recompute_user_streak",  { p_user_id: user.id, p_effective_date: today }),
+      supabase.rpc("recompute_sunnah_stats", { p_user_id: user.id, p_sunnah_id: sunnah.id }),
+    ]);
+    await refreshStats();
+  }
+
+  // ── Toggle today's completion (the simple "check" interaction) ────────────
   async function toggleCompletion() {
     if (!user || !sunnah || toggling) return;
     setToggling(true);
-
-    const today = getToday();
-    if (doneToday) {
-      setDoneToday(false);
-      await supabase.from("daily_completions")
-        .delete()
-        .eq("user_id", user.id)
-        .eq("sunnah_id", sunnah.id)
-        .eq("completed_date", today);
-      // Recompute global + per-sunnah streaks in parallel
-      await Promise.all([
-        supabase.rpc("recompute_user_streak", {
-          p_user_id:        user.id,
-          p_effective_date: today,
-        }),
-        supabase.rpc("recompute_sunnah_stats", {
-          p_user_id:   user.id,
-          p_sunnah_id: sunnah.id,
-        }),
-      ]);
-      // Refresh the stats display (streak, total, rate)
-      const { data: freshStats } = await supabase
-        .from("user_sunnah_stats")
-        .select("current_streak, longest_streak, total_completions, completion_rate_7d")
-        .eq("user_id", user.id).eq("sunnah_id", sunnah.id)
-        .maybeSingle();
-      if (freshStats) {
-        setUserData((prev) => prev ? {
-          ...prev,
-          current_streak:     freshStats.current_streak     ?? prev.current_streak,
-          longest_streak:     freshStats.longest_streak     ?? prev.longest_streak,
-          total_completions:  freshStats.total_completions  ?? prev.total_completions,
-          completion_rate_7d: freshStats.completion_rate_7d ?? prev.completion_rate_7d,
-        } : prev);
-      }
-    } else {
-      setDoneToday(true);
-      await supabase.from("daily_completions").upsert(
-        { user_id: user.id, sunnah_id: sunnah.id, completed_date: today },
-        { onConflict: "user_id,sunnah_id,completed_date" },
-      );
-      await Promise.all([
-        supabase.rpc("record_sunnah_completion", { p_user_id: user.id, p_sunnah_id: sunnah.id }),
-        supabase.rpc("update_user_streak",        { p_user_id: user.id, p_effective_date: today }),
-      ]);
-      const { data: fresh } = await supabase
-        .from("user_sunnah_stats")
-        .select("current_streak, longest_streak, total_completions, completion_rate_7d")
-        .eq("user_id", user.id).eq("sunnah_id", sunnah.id)
-        .maybeSingle();
-      if (fresh) {
-        setUserData((prev) => prev ? {
-          ...prev,
-          current_streak:     fresh.current_streak     ?? prev.current_streak,
-          longest_streak:     fresh.longest_streak     ?? prev.longest_streak,
-          total_completions:  fresh.total_completions  ?? prev.total_completions,
-          completion_rate_7d: fresh.completion_rate_7d ?? prev.completion_rate_7d,
-        } : prev);
-      }
-    }
-
+    if (doneToday) await uncompleteToday();
+    else           await completeToday();
     setToggling(false);
+  }
+
+  // ── Counter (sebha) handlers ───────────────────────────────────────────────
+  // Persist the merged counts object for today. Fire-and-forget; countsRef is
+  // updated synchronously so rapid taps always serialise the latest value.
+  function persistCount(next: number) {
+    if (!user || !sunnah) return;
+    countsRef.current = { ...countsRef.current, [sunnah.id]: next };
+    supabase.from("adhkar_sessions").upsert(
+      { user_id: user.id, session_date: getToday(), counts: countsRef.current, updated_at: new Date().toISOString() },
+      { onConflict: "user_id,session_date" },
+    ).then(({ error }) => { if (error) console.error("[counter] persist failed:", error.message); });
+  }
+
+  async function incrementCounter() {
+    if (!sunnah?.repetitions) return;
+    const next = count + 1;
+    setCount(next);
+    persistCount(next);
+    // Fire completion exactly once, at the threshold. Using `===` (not `>=`)
+    // means continued taps past the target — or a reset-then-recount — never
+    // re-trigger the completion RPCs (which aren't idempotent).
+    if (!doneToday && next === sunnah.repetitions) {
+      if (Platform.OS !== "web") Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      await completeToday();
+    }
+  }
+
+  function resetCounter() {
+    setCount(0);
+    persistCount(0);
+  }
+
+  async function undoCounter() {
+    setCount(0);
+    persistCount(0);
+    if (doneToday) await uncompleteToday();
   }
 
   // ── Remove from practice ──────────────────────────────────────────────────
@@ -284,6 +336,8 @@ export default function SunnahDetailScreen() {
           mimeType: "image/jpeg",
           dialogTitle: sunnah ? (isRTL ? sunnah.name_ar : sunnah.name_en) : "",
         });
+        // Conveying earns Nūr (server caps to once per day).
+        awardShare();
       } else {
         Alert.alert("", "Sharing is not available on this device.");
       }
@@ -496,6 +550,117 @@ export default function SunnahDetailScreen() {
         {/* ── Practice actions — only shown when sunnah is in user's list ─ */}
         {isActive && (
           <>
+            {sunnah.interaction_type === "playlist" ? (
+              /* Playlist — opens the step-by-step adhkār session player */
+              <TouchableOpacity
+                onPress={() => router.push({ pathname: "/adhkar/[slug]", params: { slug: sunnah.slug } })}
+                activeOpacity={0.85}
+                style={[
+                  styles.checkBtn,
+                  doneToday
+                    ? { backgroundColor: c.green + "22", borderColor: c.green + "50", borderWidth: 1 }
+                    : { backgroundColor: c.gold },
+                ]}
+              >
+                <View style={{ flexDirection: isRTL ? "row-reverse" : "row", alignItems: "center", gap: 10 }}>
+                  <Feather
+                    name={doneToday ? "check-circle" : "play-circle"}
+                    size={20}
+                    color={doneToday ? c.green : "#0e1a2b"}
+                  />
+                  <Text style={[
+                    styles.checkBtnText,
+                    { color: doneToday ? c.green : "#0e1a2b" },
+                    isRTL && { fontFamily: "Amiri_700Bold", fontSize: 20 },
+                  ]}>
+                    {doneToday ? t.sunnah.sessionDoneToday : t.sunnah.startSession}
+                  </Text>
+                </View>
+              </TouchableOpacity>
+            ) : sunnah.interaction_type === "counter" && sunnah.repetitions ? (
+              /* Counter (sebha) interaction */
+              <View style={{ marginTop: 4, marginBottom: 4 }}>
+                <SebhaCounter
+                  count={count}
+                  target={sunnah.repetitions}
+                  done={doneToday}
+                  onIncrement={incrementCounter}
+                  onReset={resetCounter}
+                  onUndo={undoCounter}
+                  c={c}
+                  isRTL={isRTL}
+                  t={{
+                    tapToCount:  t.sunnah.tapToCount,
+                    counterDone: t.sunnah.counterDone,
+                    reset:       t.sunnah.reset,
+                    of:          t.sunnah.of,
+                    markNotDone: t.sunnah.markNotDone,
+                  }}
+                />
+              </View>
+            ) : (
+              /* Simple "check" interaction */
+              <TouchableOpacity
+                onPress={() => {
+                  if (Platform.OS !== "web") {
+                    doneToday
+                      ? Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light)
+                      : Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+                  }
+                  toggleCompletion();
+                }}
+                activeOpacity={0.85}
+                disabled={toggling}
+                style={[
+                  styles.checkBtn,
+                  doneToday
+                    ? { backgroundColor: c.green + "22", borderColor: c.green + "50", borderWidth: 1 }
+                    : { backgroundColor: c.gold },
+                ]}
+              >
+                {toggling ? (
+                  <ActivityIndicator color={doneToday ? c.green : "#0e1a2b"} />
+                ) : (
+                  <View style={{ flexDirection: isRTL ? "row-reverse" : "row", alignItems: "center", gap: 10 }}>
+                    <Feather
+                      name={doneToday ? "check-circle" : "circle"}
+                      size={20}
+                      color={doneToday ? c.green : "#0e1a2b"}
+                    />
+                    <Text style={[
+                      styles.checkBtnText,
+                      { color: doneToday ? c.green : "#0e1a2b" },
+                      isRTL && { fontFamily: "Amiri_700Bold", fontSize: 20 },
+                    ]}>
+                      {doneToday ? t.sunnah.doneToday : t.sunnah.markDone}
+                    </Text>
+                  </View>
+                )}
+              </TouchableOpacity>
+            )}
+
+            <TouchableOpacity
+              onPress={handleRemove}
+              activeOpacity={0.7}
+              style={{ alignItems: "center", marginTop: 16 }}
+            >
+              <Text style={[
+                styles.removeText,
+                { color: userData?.is_anchor ? c.inkFaint : c.rose },
+                isRTL && { fontFamily: "Amiri_400Regular", fontSize: 15 },
+              ]}>
+                {t.sunnah.remove}
+              </Text>
+            </TouchableOpacity>
+          </>
+        )}
+
+        {/* ── Not in the active list — the user can still do it once for the
+              reward (spontaneous, earns extra Nūr) WITHOUT committing it to
+              their daily list. The app grows the list itself as you stay
+              consistent (keeps the "master a few first" philosophy intact). ── */}
+        {!isActive && (
+          <>
             <TouchableOpacity
               onPress={() => {
                 if (Platform.OS !== "web") {
@@ -511,42 +676,42 @@ export default function SunnahDetailScreen() {
                 styles.checkBtn,
                 doneToday
                   ? { backgroundColor: c.green + "22", borderColor: c.green + "50", borderWidth: 1 }
-                  : { backgroundColor: c.gold },
+                  : { backgroundColor: c.surface, borderColor: c.gold + "55", borderWidth: 1 },
               ]}
             >
               {toggling ? (
-                <ActivityIndicator color={doneToday ? c.green : "#0e1a2b"} />
+                <ActivityIndicator color={doneToday ? c.green : c.gold} />
               ) : (
                 <View style={{ flexDirection: isRTL ? "row-reverse" : "row", alignItems: "center", gap: 10 }}>
                   <Feather
-                    name={doneToday ? "check-circle" : "circle"}
-                    size={20}
-                    color={doneToday ? c.green : "#0e1a2b"}
+                    name={doneToday ? "check-circle" : "moon"}
+                    size={18}
+                    color={doneToday ? c.green : c.gold}
                   />
                   <Text style={[
                     styles.checkBtnText,
-                    { color: doneToday ? c.green : "#0e1a2b" },
-                    isRTL && { fontFamily: "Amiri_700Bold", fontSize: 20 },
+                    { color: doneToday ? c.green : c.gold, fontSize: 16 },
+                    isRTL && { fontFamily: "Amiri_700Bold", fontSize: 19 },
                   ]}>
-                    {doneToday ? t.sunnah.doneToday : t.sunnah.markDone}
+                    {doneToday ? t.sunnah.didOnceDone : t.sunnah.didOnce}
                   </Text>
                 </View>
               )}
             </TouchableOpacity>
 
-            <TouchableOpacity
-              onPress={handleRemove}
-              activeOpacity={0.7}
-              style={{ alignItems: "center", marginTop: 16 }}
-            >
+            <View style={[
+              styles.lockedHint,
+              { borderColor: c.divider, backgroundColor: c.surface, flexDirection: isRTL ? "row-reverse" : "row", marginTop: 14 },
+            ]}>
+              <Feather name="compass" size={15} color={c.gold} />
               <Text style={[
-                styles.removeText,
-                { color: userData?.is_anchor ? c.inkFaint : c.rose },
-                isRTL && { fontFamily: "Amiri_400Regular", fontSize: 15 },
+                styles.lockedHintText,
+                { color: c.inkMuted },
+                isRTL && { fontFamily: "Amiri_400Regular", fontSize: 14, textAlign: "right" },
               ]}>
-                {t.sunnah.remove}
+                {t.sunnah.willUnlock}
               </Text>
-            </TouchableOpacity>
+            </View>
           </>
         )}
 
@@ -834,6 +999,18 @@ const styles = StyleSheet.create({
   },
   checkBtnText: { fontFamily: "Georgia", fontSize: 17 },
   removeText:   { fontSize: 13 },
+
+  // Not-yet-active hint
+  lockedHint: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    borderRadius: 14,
+    borderWidth: 0.5,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+  },
+  lockedHintText: { flex: 1, fontSize: 13, lineHeight: 19 },
 
   // Bottom share button
   shareBottomBtn: {

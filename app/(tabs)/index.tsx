@@ -1,10 +1,13 @@
-import { Text, View, ScrollView, TouchableOpacity, ActivityIndicator, Alert, Linking, Platform } from "react-native";
+import { Text, View, ScrollView, TouchableOpacity, ActivityIndicator, useWindowDimensions } from "react-native";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Feather } from "@expo/vector-icons";
 import { useRouter, useFocusEffect } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useLang } from "@/hooks/useLang";
 import { useSunnahs } from "@/hooks/useSunnahs";
+import { useAdaptiveCoach } from "@/hooks/useAdaptiveCoach";
+import AdaptiveCoachCard from "@/components/AdaptiveCoachCard";
+import { useNur } from "@/contexts/NurContext";
 import { useDifficultyRating } from "@/hooks/useDifficultyRating";
 import { usePrayerCtx } from "@/contexts/PrayerTimesContext";
 import { PrayerStrip } from "@/components/PrayerStrip";
@@ -14,8 +17,6 @@ import { SunnahGroup, DayProgress } from "@/components/home/SunnahChecklist";
 import MilestoneCard, { MILESTONE_DAYS } from "@/components/MilestoneCard";
 import { useNotifications } from "@/hooks/useNotifications";
 import { isApproachingMaghrib, isPastMaghrib, minutesUntilMaghrib, getEffectiveDate } from "@/lib/islamicDate";
-import { getHijriDate }  from "@/lib/hijriDateApi";
-import { getNotificationPermission, requestNotificationPermission } from "@/lib/notifications";
 import type { ActiveSunnah, GroupKey } from "@/hooks/useSunnahs";
 
 // ── Daily motivational quotes (rotate by day of week) ────────────────────────
@@ -30,25 +31,14 @@ const DAILY_QUOTES = [
   { ar: "اتَّقِ اللهَ حيثما كنتَ",                             src: "الترمذي"      },
 ] as const;
 
-// Hijri date from Intl — kept as offline fallback when AlAdhan is unreachable.
-function getHijriFallback(date: Date, monthNames: readonly string[]): string | null {
-  try {
-    const parts = new Intl.DateTimeFormat("en-u-ca-islamic-umalqura", {
-      day: "numeric", month: "numeric",
-    }).formatToParts(date);
-    const day   = parseInt(parts.find((p) => p.type === "day")?.value  ?? "0");
-    const month = parseInt(parts.find((p) => p.type === "month")?.value ?? "0");
-    const name  = monthNames[month - 1];
-    return name ? `${day} ${name}` : null;
-  } catch { return null; }
-}
-
 const GROUP_ORDER: GroupKey[] = ["morning", "daily", "evening", "night"];
 
 export default function HomeScreen() {
   const insets               = useSafeAreaInsets();
   const router               = useRouter();
   const { t, isRTL, isDark } = useLang();
+  const { width }            = useWindowDimensions();
+  const narrow               = width < 360;   // tighten the header on small phones
   const { pending, submitRating, dismiss } = useDifficultyRating();
 
   // Prayer times — shared instance from PrayerTimesProvider (no extra geolocation call).
@@ -56,11 +46,20 @@ export default function HomeScreen() {
   const maghrib = prayers.find(p => p.key === "maghrib")?.time ?? null;
 
   const {
-    groups, completedIds, activeDates, anchorId,
+    groups, completedIds, activeDates, anchorIds,
     loading, totalCount, doneCount,
     currentStreak,
     complete, uncomplete, reload,
   } = useSunnahs(maghrib);
+
+  // ── Adaptive coach — the app guides the practice: offers a new sunnah to
+  // pick when consistent, suggests pausing a few when slipping, or a gentle
+  // restart after a lapse. Runs once after first load; reload after any action.
+  const { rec, busy: coachBusy, pickUnlock, reduce: coachReduce, recover: coachRecover, dismiss: dismissCoach } =
+    useAdaptiveCoach(!loading);
+
+  // Nūr — only need the refresh trigger here; the GlobalHeader renders the chip.
+  const { reload: reloadNur } = useNur();
 
   const effectiveToday = getEffectiveDate(maghrib);
 
@@ -68,9 +67,13 @@ export default function HomeScreen() {
   const minsLeft       = minutesUntilMaghrib(maghrib);
   const approaching    = isApproachingMaghrib(maghrib, 90);   // within 90 min
   const pastMaghrib    = isPastMaghrib(maghrib);
-  const anchorDone     = anchorId ? completedIds.has(anchorId) : true;
-  const anchorSunnah   = anchorId
-    ? Object.values(groups).flat().find(s => s.sunnah_id === anchorId)
+  // Anchors are now a small core (one or more). The streak is "sealed" when
+  // every anchor is done; the warning points at the first one still pending.
+  const anchorList     = [...anchorIds];
+  const anchorDone     = anchorList.every(id => completedIds.has(id)); // true if no anchors
+  const firstUndoneAnchor = anchorList.find(id => !completedIds.has(id)) ?? null;
+  const anchorSunnah   = firstUndoneAnchor
+    ? Object.values(groups).flat().find(s => s.sunnah_id === firstUndoneAnchor)
     : null;
   const showStreakWarn  = approaching && currentStreak > 0 && !anchorDone && !loading;
   const showNewDayNote  = pastMaghrib && doneCount === 0 && !loading && totalCount > 0;
@@ -112,74 +115,14 @@ export default function HomeScreen() {
   }, [currentStreak, loading]);
 
   // Reload whenever this screen re-gains focus (e.g. coming back from detail).
-  useFocusEffect(useCallback(() => { reload(); }, [reload]));
+  // Also refresh Nūr — it may have changed on the detail/adhkār/share screens.
+  useFocusEffect(useCallback(() => { reload(); reloadNur(); }, [reload, reloadNur]));
 
-  // ── Notification permission state ─────────────────────────────────────────
-  const [notifsEnabled, setNotifsEnabled] = useState(false);
-  useEffect(() => {
-    if (Platform.OS !== "web") {
-      getNotificationPermission().then(setNotifsEnabled);
-    }
-  }, []);
-
-  async function handleBellPress() {
-    if (notifsEnabled) {
-      Alert.alert(
-        isRTL ? "الإشعارات مفعّلة ✓" : "Notifications on",
-        isRTL
-          ? "ستصلك إشعارة عند الفجر لتذكيرك، وأخرى قبل المغرب إن لم تُتمّ سنتك المرساة."
-          : "You get a Fajr nudge each morning and a Maghrib reminder if your anchor sunnah isn't done.",
-        [
-          { text: isRTL ? "موافق" : "OK", style: "cancel" },
-          { text: isRTL ? "إعدادات النظام" : "System settings",
-            onPress: () => Linking.openSettings() },
-        ]
-      );
-    } else {
-      const granted = await requestNotificationPermission();
-      setNotifsEnabled(granted);
-      if (!granted) {
-        Alert.alert(
-          isRTL ? "تفعيل الإشعارات" : "Enable notifications",
-          isRTL
-            ? "افتح إعدادات التطبيق حتى تصلك تذكيرات يومية."
-            : "Open app settings to allow daily reminders.",
-          [
-            { text: isRTL ? "إلغاء" : "Cancel", style: "cancel" },
-            { text: isRTL ? "الإعدادات" : "Settings",
-              onPress: () => Linking.openSettings() },
-          ]
-        );
-      }
-    }
-  }
-
-  // ── Hijri date — AlAdhan API (cached), Maghrib-aware, falls back to Intl ──
-  // Uses getEffectiveDate(maghrib) so after Maghrib the date advances to the
-  // next Islamic day — the same boundary useSunnahs and the week strip use.
-  const now = new Date();
+  // Effective (Maghrib-adjusted) date drives the daily quote + week strip.
+  // The date LINE itself now lives in the persistent GlobalHeader (tab layout).
   const effectiveDate = getEffectiveDate(maghrib);  // YYYY-MM-DD
-
-  const [hijriLine, setHijriLine] = useState<string | null>(
-    getHijriFallback(now, t.hijriMonths)
-  );
-
-  useEffect(() => {
-    getHijriDate(effectiveDate).then((h) => {
-      if (!h) return;
-      const line = isRTL
-        ? `${h.weekdayAr} · ${h.dayAr} ${h.monthAr}`
-        : `${h.weekdayEn} · ${h.day} ${h.monthEn}`;
-      setHijriLine(line);
-    });
-    // Re-run whenever the effective date changes (Maghrib boundary crossing).
-  }, [effectiveDate, isRTL]);
-
-  // Derive weekday from effectiveDate so it advances at Maghrib, not midnight.
   const [_ey, _em, _ed] = effectiveDate.split("-").map(Number);
   const effectiveDow = new Date(_ey, _em - 1, _ed).getDay();
-  const weekday  = t.weekdays[effectiveDow];
-  const dateLine = hijriLine ?? weekday;
 
   const c = {
     bg:       isDark ? "#0a1422" : "#f5efe2",
@@ -200,13 +143,13 @@ export default function HomeScreen() {
         if (clearBlessingTimer.current) clearTimeout(clearBlessingTimer.current);
       }
     } else {
-      complete(sunnahId);
+      complete(sunnahId).then(reloadNur);   // completion awards Nūr → refresh the chip live
       // Show blessing for this sunnah; auto-clear after 4 s
       setJustCompletedId(sunnahId);
       if (clearBlessingTimer.current) clearTimeout(clearBlessingTimer.current);
       clearBlessingTimer.current = setTimeout(() => setJustCompletedId(null), 4000);
     }
-  }, [complete, uncomplete, justCompletedId]);
+  }, [complete, uncomplete, justCompletedId, reloadNur]);
 
   const handlePress = useCallback((sunnah: ActiveSunnah) => {
     router.push({ pathname: "/sunnah/[id]", params: { id: sunnah.sunnah_id } });
@@ -218,65 +161,21 @@ export default function HomeScreen() {
       contentContainerStyle={{ paddingBottom: 32 }}
       showsVerticalScrollIndicator={false}
     >
-      {/* ── Header ─────────────────────────────────────────── */}
-      <View style={{
-        paddingTop: insets.top + 16,
-        paddingHorizontal: 22,
-        flexDirection: isRTL ? "row-reverse" : "row",
-        alignItems: "flex-start",
-        justifyContent: "space-between",
-        marginBottom: 20,
-      }}>
-        <View style={{ alignItems: isRTL ? "flex-end" : "flex-start" }}>
-          <Text style={{
-            fontSize: 10, fontWeight: "600",
-            textTransform: isRTL ? "none" : "uppercase",
-            ...(isRTL ? {} : { letterSpacing: 1.4 }),
-            color: c.inkMuted, marginBottom: 6,
-          }}>
-            {dateLine}
+      {/* ── Greeting (the date · Nūr · bell strip is the persistent
+            GlobalHeader, rendered once in the tab layout) ─────────────── */}
+      <View style={{ paddingHorizontal: 22, paddingTop: 12, marginBottom: 20, alignItems: isRTL ? "flex-end" : "flex-start" }}>
+        {isRTL ? (
+          // Arabic — split across two words (independent, no ligature between them)
+          <Text numberOfLines={2} style={{ fontSize: narrow ? 26 : 30, fontWeight: "600", lineHeight: narrow ? 42 : 46, writingDirection: "rtl" }}>
+            <Text style={{ color: c.ink }}>{t.greetingBase}</Text>
+            <Text style={{ color: c.gold }}>{t.greetingGold}</Text>
           </Text>
-          {isRTL ? (
-            // Arabic — split across two words (independent, no ligature between them)
-            <Text style={{ fontSize: 28, fontWeight: "600", lineHeight: 42, writingDirection: "rtl" }}>
-              <Text style={{ color: c.ink }}>{t.greetingBase}</Text>
-              <Text style={{ color: c.gold }}>{t.greetingGold}</Text>
-            </Text>
-          ) : (
-            <Text style={{ fontFamily: "Georgia", fontSize: 26, letterSpacing: -0.5, lineHeight: 30 }}>
-              <Text style={{ color: c.ink }}>{t.greetingBase}</Text>
-              <Text style={{ color: c.gold }}>{t.greetingGold}</Text>
-            </Text>
-          )}
-        </View>
-
-        <TouchableOpacity
-          onPress={handleBellPress}
-          activeOpacity={0.7}
-          style={{
-            width: 38, height: 38, borderRadius: 19,
-            backgroundColor: isDark ? "#0f1d31" : "#ede4d0",
-            alignItems: "center", justifyContent: "center", marginTop: 2,
-          }}
-        >
-          <Feather
-            name={notifsEnabled ? "bell" : "bell-off"}
-            size={17}
-            color={notifsEnabled
-              ? (isDark ? c.gold : c.gold)
-              : (isDark ? "#4a5362" : "#b9bcc4")}
-          />
-          {/* Gold dot when notifications are ON */}
-          {notifsEnabled && (
-            <View style={{
-              position: "absolute", top: 6, right: 6,
-              width: 6, height: 6, borderRadius: 3,
-              backgroundColor: c.gold,
-              borderWidth: 1,
-              borderColor: isDark ? "#0f1d31" : "#ede4d0",
-            }} />
-          )}
-        </TouchableOpacity>
+        ) : (
+          <Text numberOfLines={2} style={{ fontFamily: "Georgia", fontSize: narrow ? 24 : 28, letterSpacing: -0.5, lineHeight: narrow ? 30 : 34 }}>
+            <Text style={{ color: c.ink }}>{t.greetingBase}</Text>
+            <Text style={{ color: c.gold }}>{t.greetingGold}</Text>
+          </Text>
+        )}
       </View>
 
       {/* ── Prayer strip ───────────────────────────────────── */}
@@ -425,6 +324,19 @@ export default function HomeScreen() {
         onDismiss={() => setMilestoneStreak(null)}
       />
 
+      {/* ── Adaptive coach (unlock / reduce / recover) ──────── */}
+      <AdaptiveCoachCard
+        rec={rec}
+        c={c}
+        t={t.coach}
+        isRTL={isRTL}
+        busy={coachBusy}
+        onPick={async (id) => { await pickUnlock(id); reload(); }}
+        onReduce={async (ids) => { await coachReduce(ids); reload(); }}
+        onRecover={async () => { await coachRecover(); reload(); }}
+        onDismiss={dismissCoach}
+      />
+
       {/* ── Focus card — next sunnah OR all-done ────────────── */}
       {!loading && totalCount > 0 && (() => {
         if (doneCount === totalCount) {
@@ -529,7 +441,7 @@ export default function HomeScreen() {
               groupKey={key}
               sunnahs={groups[key]}
               completedIds={completedIds}
-              anchorId={anchorId}
+              anchorIds={anchorIds}
               justCompletedId={justCompletedId}
               currentStreak={currentStreak}
               isRTL={isRTL}
