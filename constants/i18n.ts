@@ -32,6 +32,7 @@ export const strings = {
       isha:    { name: "ʿIshāʾ",  short: "Isha" },
     },
     nextPrayer: "Next",
+    prayerNow:  "Now",
     locationNeeded: "Enable location for prayer times",
 
     // Tab labels
@@ -383,6 +384,7 @@ export const strings = {
       isha:    { name: "العشاء", short: "عشاء" },
     },
     nextPrayer: "التالية",
+    prayerNow:  "حان وقتها",
     locationNeeded: "فعّل الموقع لأوقات الصلاة",
 
     // Tab labels

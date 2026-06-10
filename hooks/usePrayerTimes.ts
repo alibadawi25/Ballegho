@@ -15,11 +15,19 @@ export interface PrayerTimesState {
   nextPrayer: PrayerEntry | null;
   minutesUntil: number;
   secondsUntil: number; // total seconds until next prayer
+  /** The prayer whose adhān came within the last 30 min (the "now" window),
+   *  or null. Lets the UI keep showing the just-entered prayer + how long ago. */
+  currentPrayer: PrayerEntry | null;
+  /** Whole minutes since `currentPrayer`'s adhān (0 when none). */
+  minutesSincePrayer: number;
   city: string | null;
   resolvedMethod: CalcMethod | null;
   loading: boolean;
   permissionDenied: boolean;
 }
+
+/** How long after a prayer's adhān it stays the "current" prayer. */
+const CURRENT_PRAYER_WINDOW_MIN = 30;
 
 // ISO 3166-1 alpha-2 country → best calculation method
 const COUNTRY_METHOD: Record<string, CalcMethod> = {
@@ -79,6 +87,8 @@ export function usePrayerTimes(): PrayerTimesState & { retry: () => void } {
     nextPrayer: null,
     minutesUntil: 0,
     secondsUntil: 0,
+    currentPrayer: null,
+    minutesSincePrayer: 0,
     city: null,
     resolvedMethod: null,
     loading: true,
@@ -159,7 +169,17 @@ export function usePrayerTimes(): PrayerTimesState & { retry: () => void } {
         const secondsUntil = Math.max(0, Math.ceil(diff / 1000));
         const minutesUntil = Math.ceil(diff / 60000);
 
-        setState({ prayers, nextPrayer: next, minutesUntil, secondsUntil, city, resolvedMethod, loading: false, permissionDenied: false });
+        // The most recent prayer whose adhān has passed today. If it was within
+        // the last 30 min, treat it as the "current" prayer so the UI keeps
+        // showing it (with minutes-since) instead of immediately flipping to next.
+        const passed = prayers.filter((p) => p.time.getTime() <= now.getTime());
+        const lastPassed = passed.length ? passed[passed.length - 1] : null;
+        const sinceMs = lastPassed ? now.getTime() - lastPassed.time.getTime() : Infinity;
+        const currentPrayer =
+          lastPassed && sinceMs <= CURRENT_PRAYER_WINDOW_MIN * 60_000 ? lastPassed : null;
+        const minutesSincePrayer = currentPrayer ? Math.floor(sinceMs / 60_000) : 0;
+
+        setState({ prayers, nextPrayer: next, minutesUntil, secondsUntil, currentPrayer, minutesSincePrayer, city, resolvedMethod, loading: false, permissionDenied: false });
       }
 
       compute();

@@ -23,6 +23,13 @@ function formatCountdown(seconds: number, isRTL: boolean): string {
   return `${m}m`;
 }
 
+// Minutes elapsed since the adhān, e.g. "7m ago" / "منذ ٧ د". Mirrors the
+// countdown's compact, Western-digit style used elsewhere in the strip.
+function formatSince(minutes: number, isRTL: boolean): string {
+  if (minutes <= 0) return isRTL ? "الآن" : "now";
+  return isRTL ? `منذ ${minutes} د` : `${minutes}m ago`;
+}
+
 export interface StripColors {
   surface: string;
   divider: string;
@@ -45,7 +52,7 @@ function formatTime(date: Date): string {
 
 export function PrayerStrip({ c }: { c: StripColors }) {
   const { t, isRTL } = useLang();
-  const { prayers, nextPrayer, secondsUntil, city, loading, permissionDenied, retry } = usePrayerCtx();
+  const { prayers, nextPrayer, currentPrayer, minutesSincePrayer, secondsUntil, city, loading, permissionDenied, retry } = usePrayerCtx();
   const countdown = formatCountdown(secondsUntil, isRTL);
 
   if (loading) {
@@ -70,27 +77,25 @@ export function PrayerStrip({ c }: { c: StripColors }) {
     );
   }
 
-  const nextIndex = nextPrayer ? PRAYER_ORDER.indexOf(nextPrayer.key) : -1;
+  // The featured (centre) prayer is the just-entered one for 30 min after its
+  // adhān, otherwise the upcoming next. `upcomingIndex` (the real next prayer)
+  // still drives the progress dots.
+  const featured      = currentPrayer ?? nextPrayer;
+  const featuredIndex = featured   ? PRAYER_ORDER.indexOf(featured.key)   : -1;
+  const upcomingIndex = nextPrayer ? PRAYER_ORDER.indexOf(nextPrayer.key) : -1;
 
-  // Circular: before Fajr → prev is Isha (yesterday); after Isha → next is Fajr (tomorrow)
-  const prevKey: PrayerKey = nextIndex === 0
-    ? "isha"   // before Fajr → yesterday's Isha
-    : PRAYER_ORDER[nextIndex - 1];
-  const afterKey: PrayerKey = nextIndex === 4
-    ? "fajr"   // after Isha → tomorrow's Fajr (already set in hook)
-    : PRAYER_ORDER[nextIndex + 1];
+  // Surrounding prayers (prev ← featured → after), with day wrap-around.
+  const prevEntry  = featuredIndex === 0
+    ? { key: "isha" as PrayerKey, time: prayers[4]?.time }   // before Fajr → today's Isha
+    : featuredIndex > 0 ? prayers[featuredIndex - 1] : null;
+  const afterEntry = featuredIndex < 4 ? prayers[featuredIndex + 1] : nextPrayer; // after Isha → tomorrow's Fajr
 
-  const prevEntry  = nextIndex === 0
-    ? { key: "isha" as PrayerKey, time: prayers[4]?.time }   // show today's Isha time as "previous"
-    : nextIndex > 0 ? prayers[nextIndex - 1] : null;
-  const afterEntry = nextIndex < 4 ? prayers[nextIndex + 1] : nextPrayer; // nextPrayer IS tomorrow's Fajr
-
-  const nextName  = nextPrayer ? t.prayers[nextPrayer.key].name : "—";
+  const featuredName = featured ? t.prayers[featured.key].name : "—";
+  const featuredTime = featured ? formatTime(featured.time)    : "—";
   const prevName  = prevEntry  ? t.prayers[prevEntry.key].name  : null;
-  const afterName = nextIndex === 4
+  const afterName = featuredIndex === 4
     ? t.prayers["fajr"].name   // after Isha, "after" is Fajr
     : afterEntry ? t.prayers[afterEntry.key].name : null;
-  const nextTime  = nextPrayer  ? formatTime(nextPrayer.time)     : "—";
 
   return (
     <View style={baseCard(c)}>
@@ -103,14 +108,14 @@ export function PrayerStrip({ c }: { c: StripColors }) {
         marginBottom: 8,
       }}>
         <View style={{ flexDirection: isRTL ? "row-reverse" : "row", alignItems: "center", gap: 4 }}>
-          <Feather name="compass" size={10} color={c.gold} />
+          <Feather name={currentPrayer ? "bell" : "compass"} size={10} color={c.gold} />
           <Text style={{
             fontSize: 9, fontWeight: "600",
             textTransform: isRTL ? "none" : "uppercase",
             ...(isRTL ? {} : { letterSpacing: 1.1 }),
             color: c.gold,
           }}>
-            {t.nextPrayer}
+            {currentPrayer ? t.prayerNow : t.nextPrayer}
           </Text>
         </View>
         {city ? (
@@ -159,7 +164,7 @@ export function PrayerStrip({ c }: { c: StripColors }) {
           />
         </View>
 
-        {/* Next prayer — center, compact */}
+        {/* Featured prayer — center, compact */}
         <View style={{ alignItems: "center", flex: 1.6 }}>
           <Text style={{
             fontFamily: isRTL ? undefined : "Georgia",
@@ -168,13 +173,15 @@ export function PrayerStrip({ c }: { c: StripColors }) {
             color: c.gold,
             marginBottom: 1,
           }}>
-            {nextName}
+            {featuredName}
           </Text>
           <Text style={{ fontFamily: "Georgia", fontSize: 14, color: c.ink }}>
-            {nextTime}
+            {featuredTime}
           </Text>
-          <Text style={{ fontSize: 10, color: c.inkMuted, marginTop: 1 }}>
-            {countdown}
+          {/* When the adhān has just come, show how long ago instead of a
+              countdown — so a glance tells you it's already in. */}
+          <Text style={{ fontSize: 10, color: currentPrayer ? c.gold : c.inkMuted, marginTop: 1 }}>
+            {currentPrayer ? formatSince(minutesSincePrayer, isRTL) : countdown}
           </Text>
         </View>
 
@@ -217,10 +224,10 @@ export function PrayerStrip({ c }: { c: StripColors }) {
         justifyContent: "center",
       }}>
         {PRAYER_ORDER.map((key, i) => {
-          // nextIndex === -1 means all 5 done (next is tomorrow's Fajr)
-          const allDone   = nextIndex === -1 || (nextPrayer?.key === "fajr" && prayers[4]?.time < new Date());
-          const isDone    = allDone || nextIndex > i;
-          const isCurrent = !allDone && nextIndex === i;
+          // upcomingIndex === -1 means all 5 done (next is tomorrow's Fajr)
+          const allDone   = upcomingIndex === -1 || (nextPrayer?.key === "fajr" && prayers[4]?.time < new Date());
+          const isDone    = allDone || upcomingIndex > i;
+          const isCurrent = !allDone && upcomingIndex === i;
           return (
             <View key={key} style={{
               height: 3,
