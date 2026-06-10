@@ -41,6 +41,7 @@ export default function SebhaCounter({
   done,
   onIncrement,
   onReset,
+  onDecrement,
   onUndo,
   c,
   isRTL,
@@ -51,6 +52,7 @@ export default function SebhaCounter({
   done: boolean;
   onIncrement: () => void;
   onReset: () => void;
+  onDecrement?: () => void;
   onUndo?: () => void;
   c: Colors;
   isRTL: boolean;
@@ -62,8 +64,16 @@ export default function SebhaCounter({
   const scale = useRef(new Animated.Value(1)).current;
 
   function handleTap() {
+    // Rhythm haptics: a heavier pulse on each 33-bead boundary (33/66/99) so a
+    // long dhikr like ×100 has a tactile cadence; medium otherwise. The target
+    // "done" haptic is fired by the parent, so we don't double it here.
     if (Platform.OS !== "web") {
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+      const next = count + 1;
+      Haptics.impactAsync(
+        next < target && next % 33 === 0
+          ? Haptics.ImpactFeedbackStyle.Heavy
+          : Haptics.ImpactFeedbackStyle.Medium,
+      );
     }
     // Quick pulse on the count.
     Animated.sequence([
@@ -139,24 +149,42 @@ export default function SebhaCounter({
         </Text>
       </View>
 
-      {/* ── Reset ──────────────────────────────────────────────────────── */}
-      <TouchableOpacity
-        onPress={() => {
-          if (Platform.OS !== "web") Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-          onReset();
-        }}
-        activeOpacity={0.7}
-        disabled={count === 0}
-        style={[
-          styles.resetBtn,
-          { borderColor: c.divider, opacity: count === 0 ? 0.4 : 1, flexDirection: isRTL ? "row-reverse" : "row" },
-        ]}
-      >
-        <Feather name="rotate-ccw" size={14} color={c.inkMuted} />
-        <Text style={[{ fontSize: 13, color: c.inkMuted }, isRTL && { fontFamily: "Amiri_400Regular", fontSize: 15 }]}>
-          {t.reset}
-        </Text>
-      </TouchableOpacity>
+      {/* ── Correct (−1) + Reset ───────────────────────────────────────── */}
+      <View style={{ flexDirection: isRTL ? "row-reverse" : "row", alignItems: "center", gap: 10 }}>
+        {/* −1 — fix an accidental tap without losing the whole count */}
+        {onDecrement && (
+          <TouchableOpacity
+            onPress={() => {
+              if (Platform.OS !== "web") Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+              onDecrement();
+            }}
+            activeOpacity={0.7}
+            disabled={count === 0}
+            style={[styles.minusBtn, { borderColor: c.divider, opacity: count === 0 ? 0.4 : 1 }]}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          >
+            <Feather name="minus" size={16} color={c.inkMuted} />
+          </TouchableOpacity>
+        )}
+
+        <TouchableOpacity
+          onPress={() => {
+            if (Platform.OS !== "web") Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+            onReset();
+          }}
+          activeOpacity={0.7}
+          disabled={count === 0}
+          style={[
+            styles.resetBtn,
+            { borderColor: c.divider, opacity: count === 0 ? 0.4 : 1, flexDirection: isRTL ? "row-reverse" : "row" },
+          ]}
+        >
+          <Feather name="rotate-ccw" size={14} color={c.inkMuted} />
+          <Text style={[{ fontSize: 13, color: c.inkMuted }, isRTL && { fontFamily: "Amiri_400Regular", fontSize: 15 }]}>
+            {t.reset}
+          </Text>
+        </TouchableOpacity>
+      </View>
 
       {/* ── Undo completion (only once done, and only if undo is wired) ── */}
       {done && onUndo && (
@@ -185,5 +213,13 @@ const styles = StyleSheet.create({
     paddingVertical: 9,
     borderRadius: 99,
     borderWidth: 0.5,
+  },
+  minusBtn: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    borderWidth: 0.5,
+    alignItems: "center",
+    justifyContent: "center",
   },
 });

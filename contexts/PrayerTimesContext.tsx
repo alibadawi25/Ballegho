@@ -20,6 +20,7 @@ const DEFAULT: PrayerTimesState & { retry: () => void } = {
   secondsUntil: 0,
   currentPrayer: null,
   minutesSincePrayer: 0,
+  secondsSincePrayer: 0,
   city: null,
   resolvedMethod: null,
   loading: true,

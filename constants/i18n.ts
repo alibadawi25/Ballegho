@@ -157,12 +157,16 @@ export const strings = {
     adhkar: {
       reward:       "Reward",
       upNext:       "Up next",
+      allItems:     "All adhkār · tap any",
       of:           "of",
       times:        "×",
       complete:     "Session complete",
       completeSub:  "May Allah accept it from you.",
       backToAll:    "Done",
       empty:        "This session has no adhkār yet.",
+      doneForToday: "Done for today",
+      sealedPartial:"saved for today",
+      keepGoing:    "Not yet — keep going",
     },
 
     // Milestone celebration card (shown when global streak hits 7 / 14 / 21 / 40 / 100)
@@ -509,12 +513,16 @@ export const strings = {
     adhkar: {
       reward:       "الفضل",
       upNext:       "التالي",
+      allItems:     "كل الأذكار · اختر أيّها",
       of:           "من",
       times:        "×",
       complete:     "اكتملت الجلسة",
       completeSub:  "تقبّل الله منك.",
       backToAll:    "تمّ",
       empty:        "لا توجد أذكار في هذه الجلسة بعد.",
+      doneForToday: "أنهيت لليوم",
+      sealedPartial:"محفوظ لليوم",
+      keepGoing:    "ليس بعد — أكمل",
     },
 
     // Milestone celebration card

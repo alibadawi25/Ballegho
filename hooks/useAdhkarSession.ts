@@ -14,6 +14,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useAuth } from "@/contexts/AuthContext";
+import { useSync } from "@/contexts/SyncContext";
 import { supabase } from "@/lib/supabase";
 import { getEffectiveDate } from "@/lib/islamicDate";
 
@@ -31,6 +32,7 @@ export interface AdhkarItem {
 
 export function useAdhkarSession(slug: string | undefined, maghribTime?: Date | null) {
   const { user } = useAuth();
+  const { emit } = useSync();
 
   const maghribRef = useRef<Date | null>(maghribTime ?? null);
   maghribRef.current = maghribTime ?? null;
@@ -114,6 +116,23 @@ export function useAdhkarSession(slug: string | undefined, maghribTime?: Date | 
       supabase.rpc("record_sunnah_completion", { p_user_id: user.id, p_sunnah_id: parentSunnahId }),
       supabase.rpc("update_user_streak",        { p_user_id: user.id, p_effective_date: today }),
     ]);
+    // Sealed the day → refresh Today checklist, Progress, Nūr chip.
+    emit("completions", "nur");
+  }
+
+  // Undo a sealed session (whether it was auto-sealed or "done for today").
+  // Leaves the per-item counts intact so the user can resume from where they were.
+  async function undoParentDone() {
+    if (!user || !parentSunnahId || !doneToday) return;
+    const today = getEffectiveDate(maghribRef.current);
+    setDoneToday(false);
+    await supabase.from("daily_completions").delete()
+      .eq("user_id", user.id).eq("sunnah_id", parentSunnahId).eq("completed_date", today);
+    await Promise.all([
+      supabase.rpc("recompute_user_streak",  { p_user_id: user.id, p_effective_date: today }),
+      supabase.rpc("recompute_sunnah_stats", { p_user_id: user.id, p_sunnah_id: parentSunnahId }),
+    ]);
+    emit("completions");
   }
 
   function increment(itemId: string) {
@@ -136,14 +155,28 @@ export function useAdhkarSession(slug: string | undefined, maghribTime?: Date | 
     persist({ [itemId]: 0 });
   }
 
+  // Step back one bead — fixes an accidental tap without zeroing the count.
+  function decrement(itemId: string) {
+    const cur = counts[itemId] ?? 0;
+    if (cur <= 0) return;
+    const next = cur - 1;
+    setCounts({ ...counts, [itemId]: next });
+    persist({ [itemId]: next });
+  }
+
   const doneCount = items.filter((it) => (counts[it.id] ?? 0) >= it.repetitions).length;
   const allDone   = items.length > 0 && doneCount === items.length;
+  // True once the user has counted anything at all today (any item > 0).
+  const started   = items.some((it) => (counts[it.id] ?? 0) > 0);
   // The active item is the first one not yet at its target (-1 when all done).
   const currentIndex = items.findIndex((it) => (counts[it.id] ?? 0) < it.repetitions);
 
   return {
-    items, counts, loading, doneCount, allDone, doneToday, currentIndex,
+    items, counts, loading, doneCount, allDone, started, doneToday, currentIndex,
     parentNameEn, parentNameAr,
-    increment, reset, reload: load,
+    increment, reset, decrement, reload: load,
+    // Seal the day even with items left ("I'm done for today"), or undo it.
+    markDone: markParentDone,
+    undo:     undoParentDone,
   };
 }

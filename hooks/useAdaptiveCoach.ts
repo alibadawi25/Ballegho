@@ -16,6 +16,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useAuth } from "@/contexts/AuthContext";
+import { useSync } from "@/contexts/SyncContext";
 import { supabase } from "@/lib/supabase";
 
 export type CoachKind = "unlock" | "reduce" | "recover" | "none";
@@ -40,6 +41,7 @@ export interface CoachRecommendation {
 
 export function useAdaptiveCoach(enabled: boolean) {
   const { user } = useAuth();
+  const { emit } = useSync();
   const [rec, setRec]   = useState<CoachRecommendation | null>(null);
   const [busy, setBusy] = useState(false);
   const checkedRef = useRef(false);
@@ -68,6 +70,7 @@ export function useAdaptiveCoach(enabled: boolean) {
     });
     setBusy(false);
     dismiss();
+    if (!error) emit("sunnahs");   // active list grew → refresh Library, Today, …
     return !error && data === true;
   };
 
@@ -78,6 +81,7 @@ export function useAdaptiveCoach(enabled: boolean) {
     await supabase.rpc("reduce_load", { p_user_id: user.id, p_sunnah_ids: sunnahIds });
     setBusy(false);
     dismiss();
+    emit("sunnahs");   // paused sunnahs → active list shrank
   };
 
   /** Gentle restart — keep only the anchor active. */
@@ -87,6 +91,7 @@ export function useAdaptiveCoach(enabled: boolean) {
     await supabase.rpc("recover_practice", { p_user_id: user.id });
     setBusy(false);
     dismiss();
+    emit("sunnahs");   // restarted on the anchor → active list changed
   };
 
   return { rec, busy, pickUnlock, reduce, recover, dismiss, refetch: assess };

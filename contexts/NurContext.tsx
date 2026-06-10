@@ -16,6 +16,7 @@
 import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
 import { AppState } from "react-native";
 import { useAuth } from "@/contexts/AuthContext";
+import { useSyncEffect } from "@/contexts/SyncContext";
 import { supabase } from "@/lib/supabase";
 
 const keyOf = (itemType: string, itemKey: string) => `${itemType}:${itemKey}`;
@@ -63,6 +64,10 @@ export function NurProvider({ children }: { children: React.ReactNode }) {
   }, [user?.id]);
 
   useEffect(() => { reload(); }, [reload]);
+
+  // Any screen that awards/spends Nūr can emit("nur") and the balance refreshes
+  // here — driving the header chip and the "+N" reward popup live.
+  useSyncEffect(["nur"], reload);
 
   // Refetch when the app returns to the foreground (catches anything awarded
   // while backgrounded or on another device).

@@ -23,6 +23,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useAuth } from "@/contexts/AuthContext";
+import { useSyncEffect } from "@/contexts/SyncContext";
 import { supabase } from "@/lib/supabase";
 import { getEffectiveDate, localDateString } from "@/lib/islamicDate";
 
@@ -51,6 +52,14 @@ export function useStreaks(maghribTime?: Date | null) {
   // on every prayer-context tick.
   const maghribRef = useRef<Date | null>(maghribTime ?? null);
   maghribRef.current = maghribTime ?? null;
+
+  // Hijri date derived from the *prop* (not the ref). It changes only when the
+  // day boundary flips — including the cold-start case where the shared
+  // PrayerTimesContext resolves Maghrib *after* the first render and pushes us
+  // into the next Hijri day. Safe to use as an effect dependency: it's a date
+  // *string*, so it doesn't churn as the live countdown ticks every second.
+  const effectiveDate = getEffectiveDate(maghribTime ?? null);
+  const effectiveDateRef = useRef(effectiveDate);
 
   const [loading,        setLoading]        = useState(true);
   const [currentStreak,  setCurrentStreak]  = useState(0);
@@ -177,12 +186,24 @@ export function useStreaks(maghribTime?: Date | null) {
     setLoading(false);
   }, [user?.id]);
 
-  useEffect(() => { load(); }, [load]);
+  // Run on mount, on user change, and whenever the effective Hijri date flips.
+  // The date-flip case covers the cold-start race: Maghrib resolves *after* the
+  // first render, so the initial load() ran with the pre-Maghrib date. Without
+  // this the heatmap "today" cell and this-month counts reflect yesterday until
+  // the 30 s interval below fires or the tab is re-focused.
+  useEffect(() => {
+    effectiveDateRef.current = effectiveDate;
+    load();
+  }, [load, effectiveDate]);
 
-  // Auto-reload when the effective date changes (Maghrib boundary crossing).
-  // Without this, a user already on the Streaks tab sees a stale heatmap
-  // "today" cell until they navigate away and back.
-  const effectiveDateRef = useRef(getEffectiveDate(null));
+  // Refresh the heatmap/streak counts the moment a completion is toggled or the
+  // active list changes on another tab — no need to leave and re-enter Progress.
+  useSyncEffect(["completions", "sunnahs"], load);
+
+  // Auto-reload when the effective date changes while the app stays open and the
+  // prop doesn't re-render (Maghrib boundary crossing). Without this, a user
+  // already on the Streaks tab sees a stale heatmap "today" cell until they
+  // navigate away and back.
   useEffect(() => {
     const id = setInterval(() => {
       const next = getEffectiveDate(maghribRef.current);

@@ -18,6 +18,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { useAuth } from "@/contexts/AuthContext";
+import { useSyncEffect } from "@/contexts/SyncContext";
 import { supabase } from "@/lib/supabase";
 
 export interface LibrarySunnah {
@@ -79,6 +80,11 @@ export function useSunnahLibrary() {
   }, [user?.id]);
 
   useEffect(() => { load(); }, [load]);
+
+  // Stay live: when the active practice list changes anywhere (the coach
+  // unlocks/pauses a sunnah on the Today tab), the "active" count + badges here
+  // refresh immediately instead of waiting for this tab to be re-focused.
+  useSyncEffect(["sunnahs"], load);
 
   return { items, loading, reload: load };
 }

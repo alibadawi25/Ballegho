@@ -29,6 +29,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useAuth } from "@/contexts/AuthContext";
+import { useSync, useSyncEffect } from "@/contexts/SyncContext";
 import { supabase } from "@/lib/supabase";
 import { getEffectiveDate, localDateString } from "@/lib/islamicDate";
 
@@ -40,10 +41,20 @@ export interface ActiveSunnah {
   name_ar:             string;
   time_of_day:         string;
   estimated_seconds:   number;
+  interaction_type:    string;        // 'check' | 'counter' | 'playlist'
+  repetitions:         number | null; // target for 'counter'
   is_anchor:           boolean;
   position:            number;
   current_streak:      number;
   difficulty_effective: number;
+}
+
+/** Per-sunnah partial progress for multi-step sunnahs (counter / playlist).
+ *  done/total are "units": reps for a counter, sub-items for a playlist. */
+export interface SunnahProgress {
+  done:  number;
+  total: number;
+  kind:  "counter" | "playlist";
 }
 
 export type GroupKey = "morning" | "daily" | "evening" | "night";
@@ -64,13 +75,23 @@ function toGroup(timeOfDay: string): GroupKey {
 
 export function useSunnahs(maghribTime?: Date | null) {
   const { user } = useAuth();
+  const { emit } = useSync();
 
   // ── Stable ref so callbacks always see the current Maghrib without being
   //    recreated every second as the prayer context ticks.
   const maghribRef = useRef<Date | null>(maghribTime ?? null);
   maghribRef.current = maghribTime ?? null;
 
+  // Hijri date derived from the *prop* (not the ref). It changes only when the
+  // day boundary flips — including the cold-start case where the shared
+  // PrayerTimesContext resolves Maghrib *after* the first render and pushes us
+  // into the next Hijri day. Safe to use as an effect dependency: it's a date
+  // *string*, so it doesn't churn as the live countdown ticks every second.
+  const effectiveDate = getEffectiveDate(maghribTime ?? null);
+  const effectiveDateRef = useRef(effectiveDate);
+
   const [groups,         setGroups]         = useState<SunnahGroups>({ morning: [], daily: [], evening: [], night: [] });
+  const [progress,       setProgress]       = useState<Record<string, SunnahProgress>>({});
   const [completedIds,   setCompletedIds]   = useState<Set<string>>(new Set());
   const [activeDates,    setActiveDates]    = useState<Set<string>>(new Set());
   const [anchorIds,      setAnchorIds]      = useState<Set<string>>(new Set());
@@ -96,12 +117,14 @@ export function useSunnahs(maghribTime?: Date | null) {
       { data: completions },
       { data: streakRow },
       { data: weekRows },
+      { data: sessionRow },
+      { data: adhkarItemRows },
     ] = await Promise.all([
       supabase
         .from("user_sunnahs")
         .select(`
           id, sunnah_id, is_anchor, position,
-          sunnahs ( slug, name_en, name_ar, time_of_day, estimated_seconds )
+          sunnahs ( slug, name_en, name_ar, time_of_day, estimated_seconds, interaction_type, repetitions )
         `)
         .eq("user_id", user.id)
         .eq("is_active", true)
@@ -131,6 +154,19 @@ export function useSunnahs(maghribTime?: Date | null) {
         .eq("user_id", user.id)
         .gte("completed_date", sixDaysAgo)
         .lte("completed_date", today),
+
+      // 6. Today's counter/playlist counts (jsonb keyed by sunnah_id OR item id)
+      supabase
+        .from("adhkar_sessions")
+        .select("counts")
+        .eq("user_id", user.id)
+        .eq("session_date", today)
+        .maybeSingle(),
+
+      // 7. Playlist sub-items (tiny table) — to compute "3/7" partial progress
+      supabase
+        .from("adhkar_items")
+        .select("id, playlist_slug, repetitions"),
     ]);
 
     if (sunnahError) {
@@ -163,6 +199,8 @@ export function useSunnahs(maghribTime?: Date | null) {
         name_ar:              s.name_ar,
         time_of_day:          s.time_of_day,
         estimated_seconds:    s.estimated_seconds,
+        interaction_type:     s.interaction_type ?? "check",
+        repetitions:          s.repetitions ?? null,
         is_anchor:            row.is_anchor,
         position:             row.position,
         current_streak:       stats?.current_streak       ?? 0,
@@ -185,11 +223,42 @@ export function useSunnahs(maghribTime?: Date | null) {
 
     const total = Object.values(newGroups).reduce((acc, g) => acc + g.length, 0);
 
+    // ── Partial progress for multi-step sunnahs (counter / playlist) ──────────
+    // counts jsonb is keyed by sunnah_id (single counters) AND by item id
+    // (playlist sub-items); the two never collide (distinct uuids).
+    const counts = (sessionRow?.counts as Record<string, number> | undefined) ?? {};
+    const itemsBySlug = new Map<string, { id: string; repetitions: number }[]>();
+    for (const it of (adhkarItemRows ?? [])) {
+      const arr = itemsBySlug.get(it.playlist_slug) ?? [];
+      arr.push({ id: it.id, repetitions: it.repetitions ?? 1 });
+      itemsBySlug.set(it.playlist_slug, arr);
+    }
+    const progressMap: Record<string, SunnahProgress> = {};
+    for (const key of Object.keys(newGroups) as GroupKey[]) {
+      for (const sn of newGroups[key]) {
+        if (sn.interaction_type === "counter" && sn.repetitions) {
+          progressMap[sn.sunnah_id] = {
+            done:  Math.min(counts[sn.sunnah_id] ?? 0, sn.repetitions),
+            total: sn.repetitions,
+            kind:  "counter",
+          };
+        } else if (sn.interaction_type === "playlist") {
+          const items = itemsBySlug.get(sn.slug) ?? [];
+          progressMap[sn.sunnah_id] = {
+            done:  items.filter((it) => (counts[it.id] ?? 0) >= it.repetitions).length,
+            total: items.length,
+            kind:  "playlist",
+          };
+        }
+      }
+    }
+
     const weekDates = new Set<string>(
       (weekRows ?? []).map((r: any) => r.completed_date as string)
     );
 
     setGroups(newGroups);
+    setProgress(progressMap);
     setCompletedIds(doneSet);
     setActiveDates(weekDates);
     setAnchorIds(anchors);
@@ -199,11 +268,23 @@ export function useSunnahs(maghribTime?: Date | null) {
     setLoading(false);
   }, [user?.id]);
 
-  useEffect(() => { load(); }, [load]);
+  // Run on mount, on user change, and whenever the effective Hijri date flips.
+  // The date-flip case covers the cold-start race: Maghrib resolves *after* the
+  // first render, so the initial load() ran with the pre-Maghrib date. Without
+  // this the Today checklist shows yesterday's completions until the 30 s
+  // interval below fires or the tab is re-focused.
+  useEffect(() => {
+    effectiveDateRef.current = effectiveDate;
+    load();
+  }, [load, effectiveDate]);
 
-  // Auto-reload when the Hijri day boundary crosses (Maghrib passes).
-  // Checks every 30 s — no need for second-level precision here.
-  const effectiveDateRef = useRef(getEffectiveDate(null));
+  // Reload if the active practice list changed from elsewhere (e.g. a future
+  // add/remove screen) so the Today checklist never lags behind the DB.
+  useSyncEffect(["sunnahs"], load);
+
+  // Auto-reload when the Hijri day boundary crosses (Maghrib passes) while the
+  // app stays open and the prop doesn't re-render. Checks every 30 s — no need
+  // for second-level precision here.
   useEffect(() => {
     const id = setInterval(() => {
       const next = getEffectiveDate(maghribRef.current);
@@ -248,7 +329,11 @@ export function useSunnahs(maghribTime?: Date | null) {
       setCurrentStreak(fresh.current_streak ?? 0);
       setLongestStreak(fresh.longest_streak ?? 0);
     }
-  }, [user?.id]);
+
+    // Signal other screens (Progress/Streaks heatmap, etc.) that a completion
+    // landed. Nūr is awarded server-side here too, so refresh that balance.
+    emit("completions", "nur");
+  }, [user?.id, emit]);
 
   // ── Uncomplete ───────────────────────────────────────────────────────────
   const uncomplete = useCallback(async (sunnahId: string) => {
@@ -329,7 +414,9 @@ export function useSunnahs(maghribTime?: Date | null) {
         return next;
       });
     }
-  }, [user?.id]);
+
+    emit("completions");
+  }, [user?.id, emit]);
 
   // Count ONLY active sunnahs as "done today" — spontaneous one-off completions
   // (sunnahs not in the active list) live in completedIds too, but they must not
@@ -343,6 +430,7 @@ export function useSunnahs(maghribTime?: Date | null) {
 
   return {
     groups,
+    progress,
     completedIds,
     activeDates,
     anchorIds,

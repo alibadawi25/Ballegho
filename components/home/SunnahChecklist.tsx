@@ -1,7 +1,7 @@
 import { View, Text, TouchableOpacity, StyleSheet, Animated, Platform } from "react-native";
 import { useRef, useEffect } from "react";
 import { Feather } from "@expo/vector-icons";
-import type { ActiveSunnah, GroupKey } from "@/hooks/useSunnahs";
+import type { ActiveSunnah, GroupKey, SunnahProgress } from "@/hooks/useSunnahs";
 import { useLang } from "@/hooks/useLang";
 import * as Haptics from "expo-haptics";
 import { localDateString } from "@/lib/islamicDate";
@@ -25,8 +25,8 @@ const GROUP_META: Record<GroupKey, { en: string; ar: string; icon: string; accen
 
 function SunnahRow({
   sunnah, done, isAnchor, isRTL, c,
-  showBlessing, currentStreak, groupKey,
-  onToggle, onPress,
+  showBlessing, currentStreak, groupKey, progress,
+  onToggle, onPress, onPerform,
 }: {
   sunnah:        ActiveSunnah;
   done:          boolean;
@@ -36,8 +36,10 @@ function SunnahRow({
   showBlessing:  boolean;
   currentStreak: number;
   groupKey:      GroupKey;
+  progress?:     SunnahProgress;
   onToggle:      () => void;
   onPress:       () => void;
+  onPerform:     () => void;
 }) {
   const accentColor = GROUP_META[groupKey].accent;
   const { t } = useLang();
@@ -48,6 +50,14 @@ function SunnahRow({
     return `${Math.round(sec / 60)}m`;
   }
   const timeLabel = formatTime(sunnah.estimated_seconds);
+
+  // Multi-step sunnahs (counter / playlist) are *performed*, not just checked:
+  // the leading control opens the counter/session instead of binary-completing,
+  // and an "x/y" badge shows partial progress so doing some isn't lost.
+  const isMultiStep   = sunnah.interaction_type !== "check";
+  const partialLabel  = isMultiStep && !done && progress && progress.done > 0
+    ? (isRTL ? `${toAr(progress.done)}/${toAr(progress.total)}` : `${progress.done}/${progress.total}`)
+    : null;
 
   // ── Check circle spring bounce ──────────────────────────────────────
   const circleScale = useRef(new Animated.Value(1)).current;
@@ -111,9 +121,15 @@ function SunnahRow({
         isAnchor && !done && { backgroundColor: c.gold + "08" },
       ]}
     >
-      {/* ── Checkbox (animated spring) ── */}
+      {/* ── Leading control: checkbox for 'check', "perform" for multi-step ── */}
       <TouchableOpacity
         onPress={() => {
+          if (isMultiStep && !done) {
+            // Open the counter / session — performing, not binary-checking.
+            if (Platform.OS !== "web") Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+            onPerform();
+            return;
+          }
           // Satisfying tap: success impact on check, light on uncheck.
           if (Platform.OS !== "web") {
             done
@@ -130,11 +146,15 @@ function SunnahRow({
             styles.check,
             done
               ? { backgroundColor: c.gold, borderColor: c.gold }
-              : { borderColor: isAnchor ? c.gold : c.inkMuted },
+              : { borderColor: isMultiStep ? c.gold : isAnchor ? c.gold : c.inkMuted },
             { transform: [{ scale: circleScale }] },
           ]}
         >
-          {done && <Feather name="check" size={11} color={c.bg} />}
+          {done
+            ? <Feather name="check" size={11} color={c.bg} />
+            : isMultiStep
+            ? <Feather name="play" size={9} color={c.gold} style={{ marginLeft: isRTL ? 0 : 1 }} />
+            : null}
         </Animated.View>
       </TouchableOpacity>
 
@@ -162,11 +182,17 @@ function SunnahRow({
           </Animated.Text>
         )}
 
-        {timeLabel && !done && !showBlessing && (
+        {/* Partial progress ("3/7") takes priority over the duration hint —
+            it tells the user they've started and can pick up where they left off. */}
+        {partialLabel && !done && !showBlessing ? (
+          <Text style={[styles.timeSub, { color: c.gold, textAlign: isRTL ? "right" : "left" }]}>
+            {partialLabel} · {isRTL ? "تابِع" : "continue"}
+          </Text>
+        ) : timeLabel && !done && !showBlessing ? (
           <Text style={[styles.timeSub, { color: c.inkFaint, textAlign: isRTL ? "right" : "left" }]}>
             {timeLabel}
           </Text>
-        )}
+        ) : null}
       </TouchableOpacity>
 
       {/* ── Anchor badge ── */}
@@ -249,8 +275,8 @@ function WeekDots({ activeDates, effectiveToday, isRTL, c, isDark }: {
 
 export function SunnahGroup({
   groupKey, sunnahs, completedIds, anchorIds,
-  justCompletedId, currentStreak,
-  isRTL, c, onToggle, onPress,
+  justCompletedId, currentStreak, progress, isNow,
+  isRTL, c, onToggle, onPress, onPerform,
 }: {
   groupKey:        GroupKey;
   sunnahs:         ActiveSunnah[];
@@ -258,10 +284,13 @@ export function SunnahGroup({
   anchorIds:       Set<string>;
   justCompletedId: string | null;
   currentStreak:   number;
+  progress:        Record<string, SunnahProgress>;
+  isNow?:          boolean;
   isRTL:           boolean;
   c:               Colors;
   onToggle:        (id: string, done: boolean) => void;
   onPress:         (sunnah: ActiveSunnah) => void;
+  onPerform:       (sunnah: ActiveSunnah) => void;
 }) {
   if (!sunnahs.length) return null;
 
@@ -275,14 +304,23 @@ export function SunnahGroup({
       {/* Group header */}
       <View style={[styles.groupHeader, { flexDirection: isRTL ? "row-reverse" : "row" }]}>
         <View style={[styles.groupLeft, { flexDirection: isRTL ? "row-reverse" : "row" }]}>
-          <Feather name={meta.icon as any} size={12} color={allDone ? c.gold : meta.accent} />
+          <Feather name={meta.icon as any} size={12} color={allDone ? c.gold : isNow ? c.gold : meta.accent} />
           <Text style={[styles.groupLabel, {
-            color: allDone ? c.gold : c.inkMuted,
+            color: allDone ? c.gold : isNow ? c.gold : c.inkMuted,
             textTransform: isRTL ? "none" : "uppercase",
             ...(isRTL ? {} : { letterSpacing: 1.2 }),
           }]}>
             {isRTL ? meta.ar : meta.en}
           </Text>
+          {/* "Now" — this is the time-relevant block right now. */}
+          {isNow && !allDone && (
+            <View style={[styles.nowPill, { backgroundColor: c.gold + "1c", borderColor: c.gold + "55" }]}>
+              <View style={[styles.nowDot, { backgroundColor: c.gold }]} />
+              <Text style={[styles.nowText, { color: c.gold }, isRTL && { fontFamily: "Amiri_400Regular", fontSize: 11 }]}>
+                {isRTL ? "الآن" : "now"}
+              </Text>
+            </View>
+          )}
         </View>
         {allDone ? (
           <View style={[styles.allDonePill, { borderColor: c.gold + "60", backgroundColor: c.gold + "14" }]}>
@@ -321,8 +359,10 @@ export function SunnahGroup({
                 showBlessing={showBless}
                 currentStreak={currentStreak}
                 groupKey={groupKey}
+                progress={progress[s.sunnah_id]}
                 onToggle={() => onToggle(s.sunnah_id, isDone)}
                 onPress={() => onPress(s)}
+                onPerform={() => onPerform(s)}
               />
             </View>
           );
@@ -475,6 +515,9 @@ const styles = StyleSheet.create({
   },
   groupLeft:  { alignItems: "center", gap: 6 },
   groupLabel: { fontSize: 10, fontWeight: "600" },
+  nowPill:    { flexDirection: "row", alignItems: "center", gap: 4, paddingHorizontal: 7, paddingVertical: 2, borderRadius: 99, borderWidth: 0.5 },
+  nowDot:     { width: 5, height: 5, borderRadius: 3 },
+  nowText:    { fontSize: 9, fontWeight: "700", textTransform: "uppercase", letterSpacing: 0.6 },
   groupCount: { fontSize: 12, fontFamily: "Georgia" },
   allDonePill: {
     flexDirection: "row", alignItems: "center", gap: 4,

@@ -15,6 +15,7 @@ import {
 import * as SplashScreen from "expo-splash-screen";
 import { SettingsProvider } from "@/contexts/SettingsContext";
 import { AuthProvider, useAuth } from "@/contexts/AuthContext";
+import { SyncProvider } from "@/contexts/SyncContext";
 import { NurProvider } from "@/contexts/NurContext";
 import NurReward from "@/components/NurReward";
 import FirstNurTip from "@/components/FirstNurTip";
@@ -158,6 +159,7 @@ export default function RootLayout() {
   return (
     <SettingsProvider>
       <AuthProvider>
+        <SyncProvider>
         <NurProvider>
         {/* Stack renders first so the navigator is always present when
             AuthGate calls router.replace(). AuthGate sits on top as an
@@ -173,6 +175,7 @@ export default function RootLayout() {
         <NurReward />
         <FirstNurTip />
         </NurProvider>
+        </SyncProvider>
       </AuthProvider>
     </SettingsProvider>
   );

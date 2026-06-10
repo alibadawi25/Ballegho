@@ -57,14 +57,53 @@ export function useNotifications({
       await requestNotificationPermission();
 
       const fajrEntry    = prayers.find(p => p.key === "fajr");
+      const asrEntry     = prayers.find(p => p.key === "asr");
+      const ishaEntry    = prayers.find(p => p.key === "isha");
       const maghribEntry = prayers.find(p => p.key === "maghrib");
+
+      // ── Day-specific "occasion" reminder ──────────────────────────────────
+      // Friday → read Sūrat al-Kahf · Sun/Wed evening → tomorrow is a Mon/Thu
+      // fast. Only one slot; these never collide on the same day.
+      const now   = new Date();
+      const dow   = now.getDay(); // 0 Sun … 6 Sat
+      const dhuhr = prayers.find(p => p.key === "dhuhr")?.time ?? null;
+      let occasion: { date: Date; title: string; body: string } | null = null;
+
+      if (dow === 5) {
+        // Friday: remind at Ḍuhr, else ~2h before Maghrib.
+        const when =
+          dhuhr && dhuhr > now ? dhuhr
+          : maghribEntry ? new Date(maghribEntry.time.getTime() - 120 * 60_000)
+          : null;
+        if (when && when > now) {
+          occasion = {
+            date: when,
+            title: isRTL ? "إنه يوم الجمعة" : "It's Friday",
+            body:  isRTL ? "اقرأ سورة الكهف؛ نورٌ لك إلى الجمعة القادمة" : "Read Sūrat al-Kahf — light until next Friday",
+          };
+        }
+      } else if (dow === 0 || dow === 3) {
+        // Sun/Wed evening → tomorrow is Monday/Thursday (Prophetic fast days).
+        const when = ishaEntry?.time
+          ?? (maghribEntry ? new Date(maghribEntry.time.getTime() + 60 * 60_000) : null);
+        if (when && when > now) {
+          occasion = {
+            date: when,
+            title: isRTL ? "صيام الغد؟" : "Fasting tomorrow?",
+            body:  isRTL ? "غدًا من الأيام التي كان النبي ﷺ يصومها — انوِ من الليل" : "Tomorrow is a day the Prophet ﷺ fasted — set your niyyah tonight",
+          };
+        }
+      }
 
       await scheduleDailyNotifications({
         fajrTime:      fajrEntry?.time    ?? null,
+        asrTime:       asrEntry?.time     ?? null,
+        ishaTime:      ishaEntry?.time    ?? null,
         maghribTime:   maghribEntry?.time ?? null,
         currentStreak,
         anchorDone,
         anchorName,
+        occasion,
         // Notification strings — fully localised
         fajrTitle: isRTL
           ? "بسم الله — صباح الخير"
@@ -72,6 +111,10 @@ export function useNotifications({
         fajrBody: isRTL
           ? "سنن اليوم بانتظارك"
           : "Your sunnahs for today await",
+        eveningTitle: isRTL ? "أذكار المساء" : "Evening adhkār",
+        eveningBody:  isRTL ? "خذ لحظة مع أذكار المساء" : "Take a moment as the day winds down",
+        nightTitle:   isRTL ? "قبل النوم" : "Before you sleep",
+        nightBody:    isRTL ? "اختم يومك بأذكار النوم" : "End your day with the sleeping adhkār",
         warnTitle: isRTL
           ? `⚡ اليوم ${currentStreak} — أتمّه`
           : `⚡ Day ${currentStreak} — seal it`,

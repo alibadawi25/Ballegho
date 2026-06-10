@@ -12,6 +12,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { useAuth } from "@/contexts/AuthContext";
+import { useSync, useSyncEffect } from "@/contexts/SyncContext";
 import { supabase } from "@/lib/supabase";
 
 export type FavoriteType = "sunnah" | "hadith" | "adhkar";
@@ -20,6 +21,7 @@ const keyOf = (type: FavoriteType, id: string) => `${type}:${id}`;
 
 export function useFavorites() {
   const { user } = useAuth();
+  const { emit } = useSync();
   const [keys,    setKeys]    = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
 
@@ -38,6 +40,10 @@ export function useFavorites() {
   }, [user?.id]);
 
   useEffect(() => { load(); }, [load]);
+
+  // Keep every useFavorites instance (library list, detail page, profile
+  // shortcut) in agreement — a heart toggled on one reloads the others.
+  useSyncEffect(["favorites"], load);
 
   const isFavorite = useCallback(
     (id: string, type: FavoriteType = "sunnah") => keys.has(keyOf(type, id)),
@@ -67,6 +73,8 @@ export function useFavorites() {
       if (error) {
         console.error("[useFavorites] remove failed:", error.message);
         setKeys((prev) => new Set(prev).add(k)); // rollback
+      } else {
+        emit("favorites");
       }
     } else {
       const { error } = await supabase
@@ -75,9 +83,11 @@ export function useFavorites() {
       if (error) {
         console.error("[useFavorites] add failed:", error.message);
         setKeys((prev) => { const n = new Set(prev); n.delete(k); return n; }); // rollback
+      } else {
+        emit("favorites");
       }
     }
-  }, [user?.id, keys]);
+  }, [user?.id, keys, emit]);
 
   /** All saved item ids of a given type (e.g. to filter the library). */
   const idsOfType = useCallback((type: FavoriteType = "sunnah") => {

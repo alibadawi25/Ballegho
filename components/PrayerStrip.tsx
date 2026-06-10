@@ -3,31 +3,20 @@ import { Feather } from "@expo/vector-icons";
 import { type PrayerKey } from "@/hooks/usePrayerTimes";
 import { usePrayerCtx } from "@/contexts/PrayerTimesContext";
 import { useLang } from "@/hooks/useLang";
+import { localizeNumber } from "@/lib/arabicNumerals";
 
-function formatCountdown(seconds: number, isRTL: boolean): string {
-  if (seconds <= 0) return isRTL ? "الآن" : "now";
-
-  const h = Math.floor(seconds / 3600);
-  const m = Math.floor((seconds % 3600) / 60);
-  const s = seconds % 60;
-  const underHour = seconds < 3600;
-
-  if (isRTL) {
-    if (h > 0)        return m > 0 ? `${h} س ${m} د` : `${h} س`;
-    if (underHour)    return s > 0 ? `${m} د ${s} ث` : `${m} د`;
-    return `${m} د`;
-  }
-
-  if (h > 0)       return m > 0 ? `${h}h ${m}m` : `${h}h`;
-  if (underHour)   return s > 0 ? `${m}m ${s}s` : `${m}m`;
-  return `${m}m`;
-}
-
-// Minutes elapsed since the adhān, e.g. "7m ago" / "منذ ٧ د". Mirrors the
-// countdown's compact, Western-digit style used elsewhere in the strip.
-function formatSince(minutes: number, isRTL: boolean): string {
-  if (minutes <= 0) return isRTL ? "الآن" : "now";
-  return isRTL ? `منذ ${minutes} د` : `${minutes}m ago`;
+// A single clock format for both directions so the strip reads consistently:
+//   next prayer  →  "04:32"  /  "1:29:05"  (counting down)
+//   just-passed  →  "-04:32"               (counting up since adhān, negated)
+// MM:SS under an hour, H:MM:SS at/over an hour. Digits localise for Arabic.
+function formatClock(totalSeconds: number, isRTL: boolean): string {
+  const s   = Math.max(0, totalSeconds);
+  const h   = Math.floor(s / 3600);
+  const m   = Math.floor((s % 3600) / 60);
+  const sec = s % 60;
+  const pad = (n: number) => String(n).padStart(2, "0");
+  const str = h > 0 ? `${h}:${pad(m)}:${pad(sec)}` : `${pad(m)}:${pad(sec)}`;
+  return localizeNumber(str, isRTL);
 }
 
 export interface StripColors {
@@ -52,8 +41,11 @@ function formatTime(date: Date): string {
 
 export function PrayerStrip({ c }: { c: StripColors }) {
   const { t, isRTL } = useLang();
-  const { prayers, nextPrayer, currentPrayer, minutesSincePrayer, secondsUntil, city, loading, permissionDenied, retry } = usePrayerCtx();
-  const countdown = formatCountdown(secondsUntil, isRTL);
+  const { prayers, nextPrayer, currentPrayer, secondsSincePrayer, secondsUntil, city, loading, permissionDenied, retry } = usePrayerCtx();
+  // Both states share the clock format; the elapsed one is negated (-MM:SS).
+  const countdown = currentPrayer
+    ? `-${formatClock(secondsSincePrayer, isRTL)}`
+    : formatClock(secondsUntil, isRTL);
 
   if (loading) {
     return (
@@ -180,8 +172,8 @@ export function PrayerStrip({ c }: { c: StripColors }) {
           </Text>
           {/* When the adhān has just come, show how long ago instead of a
               countdown — so a glance tells you it's already in. */}
-          <Text style={{ fontSize: 10, color: currentPrayer ? c.gold : c.inkMuted, marginTop: 1 }}>
-            {currentPrayer ? formatSince(minutesSincePrayer, isRTL) : countdown}
+          <Text style={{ fontSize: 10, color: currentPrayer ? c.gold : c.inkMuted, marginTop: 1, fontVariant: ["tabular-nums"] }}>
+            {countdown}
           </Text>
         </View>
 

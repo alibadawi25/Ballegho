@@ -33,6 +33,21 @@ const DAILY_QUOTES = [
 
 const GROUP_ORDER: GroupKey[] = ["morning", "daily", "evening", "night"];
 
+// Which time-of-day block is "now", from the live clock + prayer times, so the
+// Today screen can lead with what's actually relevant this moment:
+//   Fajr→Ḍuhr → morning   ·   Ḍuhr→ʿAṣr → daily
+//   ʿAṣr→Maghrib → evening ·   after Maghrib / before Fajr → night
+function focusBlock(prayers: { key: string; time: Date }[], now: Date): GroupKey {
+  const at = (k: string) => prayers.find((p) => p.key === k)?.time ?? null;
+  const fajr = at("fajr"), dhuhr = at("dhuhr"), asr = at("asr"), maghrib = at("maghrib");
+  if (!fajr) return "daily";
+  if (maghrib && now >= maghrib) return "night";
+  if (asr && now >= asr)         return "evening";
+  if (dhuhr && now >= dhuhr)     return "daily";
+  if (now >= fajr)               return "morning";
+  return "night"; // pre-Fajr small hours → wind-down / sleep set
+}
+
 export default function HomeScreen() {
   const insets               = useSafeAreaInsets();
   const router               = useRouter();
@@ -45,8 +60,16 @@ export default function HomeScreen() {
   const { prayers } = usePrayerCtx();
   const maghrib = prayers.find(p => p.key === "maghrib")?.time ?? null;
 
+  // Lead with the time-relevant block. The prayer context ticks every second, so
+  // this re-evaluates as the day moves (morning adhkār after Fajr, the sleep set
+  // at night, etc.). Falls back to the static order until prayer times load.
+  const nowBlock     = prayers.length ? focusBlock(prayers, new Date()) : null;
+  const dynamicOrder: GroupKey[] = nowBlock
+    ? [nowBlock, ...GROUP_ORDER.filter((g) => g !== nowBlock)]
+    : GROUP_ORDER;
+
   const {
-    groups, completedIds, activeDates, anchorIds,
+    groups, progress, completedIds, activeDates, anchorIds,
     loading, totalCount, doneCount,
     currentStreak,
     complete, uncomplete, reload,
@@ -153,6 +176,16 @@ export default function HomeScreen() {
 
   const handlePress = useCallback((sunnah: ActiveSunnah) => {
     router.push({ pathname: "/sunnah/[id]", params: { id: sunnah.sunnah_id } });
+  }, [router]);
+
+  // Perform a multi-step sunnah directly from the checklist: a playlist opens
+  // the step-by-step session; a counter opens its detail (where the sebha is).
+  const handlePerform = useCallback((sunnah: ActiveSunnah) => {
+    if (sunnah.interaction_type === "playlist") {
+      router.push({ pathname: "/adhkar/[slug]", params: { slug: sunnah.slug } });
+    } else {
+      router.push({ pathname: "/sunnah/[id]", params: { id: sunnah.sunnah_id } });
+    }
   }, [router]);
 
   return (
@@ -366,9 +399,10 @@ export default function HomeScreen() {
           );
         }
 
-        // Find first uncompleted sunnah across all groups
+        // Find the first uncompleted sunnah, preferring the current time block
+        // so "Up next" points at what's relevant right now.
         const nextSunnah = (() => {
-          for (const key of GROUP_ORDER) {
+          for (const key of dynamicOrder) {
             const s = groups[key].find(s => !completedIds.has(s.sunnah_id));
             if (s) return s;
           }
@@ -379,7 +413,11 @@ export default function HomeScreen() {
 
         return (
           <TouchableOpacity
-            onPress={() => handleToggle(nextSunnah.sunnah_id, false)}
+            onPress={() =>
+              nextSunnah.interaction_type === "check"
+                ? handleToggle(nextSunnah.sunnah_id, false)
+                : handlePerform(nextSunnah)
+            }
             activeOpacity={0.85}
             style={{
               marginHorizontal: 22, marginBottom: 16,
@@ -435,7 +473,7 @@ export default function HomeScreen() {
             </Text>
           </View>
         ) : (
-          GROUP_ORDER.map((key) => (
+          dynamicOrder.map((key) => (
             <SunnahGroup
               key={key}
               groupKey={key}
@@ -444,10 +482,13 @@ export default function HomeScreen() {
               anchorIds={anchorIds}
               justCompletedId={justCompletedId}
               currentStreak={currentStreak}
+              progress={progress}
+              isNow={key === nowBlock}
               isRTL={isRTL}
               c={c}
               onToggle={handleToggle}
               onPress={handlePress}
+              onPerform={handlePerform}
             />
           ))
         )}

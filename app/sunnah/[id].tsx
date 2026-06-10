@@ -34,6 +34,7 @@ import { useLang } from "@/hooks/useLang";
 import { useAuth } from "@/contexts/AuthContext";
 import { useFavorites } from "@/hooks/useFavorites";
 import { useNur } from "@/contexts/NurContext";
+import { useSync } from "@/contexts/SyncContext";
 import { supabase } from "@/lib/supabase";
 import { TYPE, colors } from "@/constants/theme";
 import SunnahShareCard, { type ShareableSunnah, type ShareTheme } from "@/components/SunnahShareCard";
@@ -116,6 +117,7 @@ export default function SunnahDetailScreen() {
   const c = colors(isDark);
   const { isFavorite, toggle: toggleFav } = useFavorites();
   const { awardShare, reload: reloadNur } = useNur();
+  const { emit } = useSync();
 
   // sunnah/[id] is outside the (tabs) tree so it cannot use PrayerTimesContext.
   // Call usePrayerTimes directly — geolocation is already cached by this point.
@@ -229,6 +231,9 @@ export default function SunnahDetailScreen() {
       supabase.rpc("update_user_streak",        { p_user_id: user.id, p_effective_date: today }),
     ]);
     await refreshStats();
+    // Broadcast: the Today checklist, Progress heatmap, and Nūr chip all depend
+    // on this completion. (reloadNur is implied by emit("nur") but kept explicit.)
+    emit("completions", "nur");
     reloadNur();   // completion (incl. spontaneous) awarded Nūr — refresh live
   }
 
@@ -247,6 +252,7 @@ export default function SunnahDetailScreen() {
       supabase.rpc("recompute_sunnah_stats", { p_user_id: user.id, p_sunnah_id: sunnah.id }),
     ]);
     await refreshStats();
+    emit("completions");   // Today + Progress reflect the undo live
   }
 
   // ── Toggle today's completion (the simple "check" interaction) ────────────
@@ -287,6 +293,13 @@ export default function SunnahDetailScreen() {
   function resetCounter() {
     setCount(0);
     persistCount(0);
+  }
+
+  function decrementCounter() {
+    if (count <= 0) return;
+    const next = count - 1;
+    setCount(next);
+    persistCount(next);
   }
 
   async function undoCounter() {
@@ -586,6 +599,7 @@ export default function SunnahDetailScreen() {
                   done={doneToday}
                   onIncrement={incrementCounter}
                   onReset={resetCounter}
+                  onDecrement={decrementCounter}
                   onUndo={undoCounter}
                   c={c}
                   isRTL={isRTL}
@@ -661,43 +675,91 @@ export default function SunnahDetailScreen() {
               consistent (keeps the "master a few first" philosophy intact). ── */}
         {!isActive && (
           <>
-            <TouchableOpacity
-              onPress={() => {
-                if (Platform.OS !== "web") {
+            {/* Even when not in the daily list, the user can perform it in-app
+                right now (counter / session) for the spontaneous reward — the
+                same experience as an active sunnah, just without committing it. */}
+            {sunnah.interaction_type === "playlist" ? (
+              <TouchableOpacity
+                onPress={() => router.push({ pathname: "/adhkar/[slug]", params: { slug: sunnah.slug } })}
+                activeOpacity={0.85}
+                style={[
+                  styles.checkBtn,
                   doneToday
-                    ? Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light)
-                    : Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-                }
-                toggleCompletion();
-              }}
-              activeOpacity={0.85}
-              disabled={toggling}
-              style={[
-                styles.checkBtn,
-                doneToday
-                  ? { backgroundColor: c.green + "22", borderColor: c.green + "50", borderWidth: 1 }
-                  : { backgroundColor: c.surface, borderColor: c.gold + "55", borderWidth: 1 },
-              ]}
-            >
-              {toggling ? (
-                <ActivityIndicator color={doneToday ? c.green : c.gold} />
-              ) : (
+                    ? { backgroundColor: c.green + "22", borderColor: c.green + "50", borderWidth: 1 }
+                    : { backgroundColor: c.surface, borderColor: c.gold + "55", borderWidth: 1 },
+                ]}
+              >
                 <View style={{ flexDirection: isRTL ? "row-reverse" : "row", alignItems: "center", gap: 10 }}>
-                  <Feather
-                    name={doneToday ? "check-circle" : "moon"}
-                    size={18}
-                    color={doneToday ? c.green : c.gold}
-                  />
+                  <Feather name={doneToday ? "check-circle" : "play-circle"} size={18} color={doneToday ? c.green : c.gold} />
                   <Text style={[
                     styles.checkBtnText,
                     { color: doneToday ? c.green : c.gold, fontSize: 16 },
                     isRTL && { fontFamily: "Amiri_700Bold", fontSize: 19 },
                   ]}>
-                    {doneToday ? t.sunnah.didOnceDone : t.sunnah.didOnce}
+                    {doneToday ? t.sunnah.sessionDoneToday : t.sunnah.startSession}
                   </Text>
                 </View>
-              )}
-            </TouchableOpacity>
+              </TouchableOpacity>
+            ) : sunnah.interaction_type === "counter" && sunnah.repetitions ? (
+              <View style={{ marginTop: 4, marginBottom: 4 }}>
+                <SebhaCounter
+                  count={count}
+                  target={sunnah.repetitions}
+                  done={doneToday}
+                  onIncrement={incrementCounter}
+                  onReset={resetCounter}
+                  onDecrement={decrementCounter}
+                  onUndo={undoCounter}
+                  c={c}
+                  isRTL={isRTL}
+                  t={{
+                    tapToCount:  t.sunnah.tapToCount,
+                    counterDone: t.sunnah.counterDone,
+                    reset:       t.sunnah.reset,
+                    of:          t.sunnah.of,
+                    markNotDone: t.sunnah.markNotDone,
+                  }}
+                />
+              </View>
+            ) : (
+              <TouchableOpacity
+                onPress={() => {
+                  if (Platform.OS !== "web") {
+                    doneToday
+                      ? Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light)
+                      : Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+                  }
+                  toggleCompletion();
+                }}
+                activeOpacity={0.85}
+                disabled={toggling}
+                style={[
+                  styles.checkBtn,
+                  doneToday
+                    ? { backgroundColor: c.green + "22", borderColor: c.green + "50", borderWidth: 1 }
+                    : { backgroundColor: c.surface, borderColor: c.gold + "55", borderWidth: 1 },
+                ]}
+              >
+                {toggling ? (
+                  <ActivityIndicator color={doneToday ? c.green : c.gold} />
+                ) : (
+                  <View style={{ flexDirection: isRTL ? "row-reverse" : "row", alignItems: "center", gap: 10 }}>
+                    <Feather
+                      name={doneToday ? "check-circle" : "moon"}
+                      size={18}
+                      color={doneToday ? c.green : c.gold}
+                    />
+                    <Text style={[
+                      styles.checkBtnText,
+                      { color: doneToday ? c.green : c.gold, fontSize: 16 },
+                      isRTL && { fontFamily: "Amiri_700Bold", fontSize: 19 },
+                    ]}>
+                      {doneToday ? t.sunnah.didOnceDone : t.sunnah.didOnce}
+                    </Text>
+                  </View>
+                )}
+              </TouchableOpacity>
+            )}
 
             <View style={[
               styles.lockedHint,

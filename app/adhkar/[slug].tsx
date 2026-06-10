@@ -12,7 +12,7 @@
 import {
   View, Text, ScrollView, TouchableOpacity, ActivityIndicator, StyleSheet, Platform,
 } from "react-native";
-import { useRef } from "react";
+import { useRef, useState } from "react";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Feather } from "@expo/vector-icons";
@@ -37,18 +37,33 @@ export default function AdhkarSessionScreen() {
   maghribRef.current = prayers.find((p) => p.key === "maghrib")?.time ?? null;
 
   const {
-    items, counts, loading, doneCount, allDone, currentIndex,
-    parentNameEn, parentNameAr, increment, reset,
+    items, counts, loading, doneCount, allDone, started, doneToday, currentIndex,
+    parentNameEn, parentNameAr, increment, reset, decrement, markDone, undo,
   } = useAdhkarSession(slug, maghribRef.current);
 
   const title = isRTL ? parentNameAr : parentNameEn;
   const total = items.length;
+  // The day is sealed either by finishing every dhikr OR by tapping "done for
+  // today" with some left — both show the completion state.
+  const sealed = allDone || doneToday;
+
+  function handleDoneForToday() {
+    if (Platform.OS !== "web") Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    markDone();
+  }
+
+  // The order of the adhkār is not religiously binding, so the user may do them
+  // in any sequence. `selectedId` lets them pick a dhikr; when unset we fall back
+  // to the first unfinished one (the gentle default flow).
+  const [selectedId, setSelectedId] = useState<string | null>(null);
 
   function handleIncrement(item: AdhkarItem) {
     const reachesTarget = (counts[item.id] ?? 0) + 1 >= item.repetitions;
     increment(item.id);
-    if (reachesTarget && Platform.OS !== "web") {
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    if (reachesTarget) {
+      if (Platform.OS !== "web") Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      // Finished the picked dhikr → resume auto-advance to the next unfinished one.
+      setSelectedId(null);
     }
   }
 
@@ -61,8 +76,10 @@ export default function AdhkarSessionScreen() {
     );
   }
 
-  const current = currentIndex >= 0 ? items[currentIndex] : null;
-  const upNext  = items.filter((_, i) => i > currentIndex && currentIndex >= 0);
+  // Active = the user's pick, else the first unfinished dhikr.
+  const selIdx       = selectedId ? items.findIndex((i) => i.id === selectedId) : -1;
+  const activeIndex  = selIdx >= 0 ? selIdx : currentIndex;
+  const current      = activeIndex >= 0 ? items[activeIndex] : null;
 
   return (
     <View style={{ flex: 1, backgroundColor: c.bg }}>
@@ -110,17 +127,19 @@ export default function AdhkarSessionScreen() {
           <Text style={[{ color: c.inkMuted, textAlign: "center", marginTop: 40 }, isRTL && styles.arLabel]}>
             {t.adhkar.empty}
           </Text>
-        ) : allDone || !current ? (
-          /* ── Completion ─────────────────────────────────────────────── */
+        ) : sealed || !current ? (
+          /* ── Completion (finished all, or "done for today" with some left) ── */
           <View style={styles.completeWrap}>
             <View style={[styles.completeBadge, { backgroundColor: c.green + "1e", borderColor: c.green + "55" }]}>
               <Feather name="check" size={42} color={c.green} />
             </View>
             <Text style={[styles.completeTitle, { color: c.ink }, isRTL && { fontFamily: "Amiri_700Bold" }]}>
-              {t.adhkar.complete}
+              {allDone ? t.adhkar.complete : t.adhkar.doneForToday}
             </Text>
             <Text style={[styles.completeSub, { color: c.inkMuted }, isRTL && styles.arLabel]}>
-              {t.adhkar.completeSub}
+              {allDone
+                ? t.adhkar.completeSub
+                : `${localizeNumber(doneCount, isRTL)} ${t.adhkar.of} ${localizeNumber(total, isRTL)} · ${t.adhkar.sealedPartial}`}
             </Text>
             <TouchableOpacity
               onPress={() => router.back()}
@@ -131,6 +150,14 @@ export default function AdhkarSessionScreen() {
                 {t.adhkar.backToAll}
               </Text>
             </TouchableOpacity>
+            {/* Resume — undo the seal and keep going through the rest. */}
+            {!allDone && (
+              <TouchableOpacity onPress={undo} activeOpacity={0.7} style={{ marginTop: 14 }}>
+                <Text style={[styles.keepGoing, { color: c.inkMuted }, isRTL && styles.arLabel]}>
+                  {t.adhkar.keepGoing}
+                </Text>
+              </TouchableOpacity>
+            )}
           </View>
         ) : (
           <>
@@ -183,6 +210,7 @@ export default function AdhkarSessionScreen() {
                 done={(counts[current.id] ?? 0) >= current.repetitions}
                 onIncrement={() => handleIncrement(current)}
                 onReset={() => reset(current.id)}
+                onDecrement={() => decrement(current.id)}
                 c={c}
                 isRTL={isRTL}
                 t={{
@@ -195,31 +223,65 @@ export default function AdhkarSessionScreen() {
               />
             </View>
 
-            {/* ── Up next ──────────────────────────────────────────────── */}
-            {upNext.length > 0 && (
+            {/* ── "I'm done for today" — seal the day with some dhikr left.
+                 Honours doing part of the set without losing the streak. ── */}
+            {started && (
+              <TouchableOpacity
+                onPress={handleDoneForToday}
+                activeOpacity={0.7}
+                style={[styles.doneForToday, { borderColor: c.divider, flexDirection: isRTL ? "row-reverse" : "row" }]}
+              >
+                <Feather name="check-circle" size={15} color={c.inkMuted} />
+                <Text style={[styles.doneForTodayText, { color: c.inkMuted }, isRTL && styles.arLabel]}>
+                  {t.adhkar.doneForToday}
+                </Text>
+              </TouchableOpacity>
+            )}
+
+            {/* ── All adhkār — tap any to do it (order isn't required) ───── */}
+            {items.length > 1 && (
               <View style={{ marginTop: 26 }}>
-                <Text style={[styles.upNextHeader, { color: c.inkMuted }, isRTL && styles.arLabel]}>{t.adhkar.upNext}</Text>
-                {upNext.map((it) => (
-                  <View
-                    key={it.id}
-                    style={[styles.upRow, { borderBottomColor: c.divider, flexDirection: isRTL ? "row-reverse" : "row" }]}
-                  >
-                    <View style={[styles.upNum, { borderColor: c.divider }]}>
-                      <Text style={[styles.upNumText, { color: c.inkMuted }]}>{localizeNumber(it.position, isRTL)}</Text>
-                    </View>
-                    <Text
-                      style={[styles.upText, { color: c.ink, textAlign: isRTL ? "right" : "left" }]}
-                      numberOfLines={1}
+                <Text style={[styles.upNextHeader, { color: c.inkMuted }, isRTL && styles.arLabel]}>{t.adhkar.allItems}</Text>
+                {items.map((it) => {
+                  const itCount = counts[it.id] ?? 0;
+                  const itDone  = itCount >= it.repetitions;
+                  const isCur   = it.id === current.id;
+                  return (
+                    <TouchableOpacity
+                      key={it.id}
+                      onPress={() => setSelectedId(it.id)}
+                      activeOpacity={0.7}
+                      style={[
+                        styles.upRow,
+                        { borderBottomColor: c.divider, flexDirection: isRTL ? "row-reverse" : "row" },
+                        isCur && { backgroundColor: c.gold + "12", borderRadius: 10, paddingHorizontal: 8 },
+                      ]}
                     >
-                      {it.arabic}
-                    </Text>
-                    <View style={[styles.repPill, { backgroundColor: c.surface, borderColor: c.divider }]}>
-                      <Text style={[styles.repPillText, { color: c.inkMuted }]}>
-                        {t.adhkar.times}{localizeNumber(it.repetitions, isRTL)}
+                      <View style={[
+                        styles.upNum,
+                        { borderColor: itDone ? c.green + "70" : isCur ? c.gold : c.divider,
+                          backgroundColor: itDone ? c.green + "1e" : "transparent" },
+                      ]}>
+                        {itDone
+                          ? <Feather name="check" size={12} color={c.green} />
+                          : <Text style={[styles.upNumText, { color: isCur ? c.gold : c.inkMuted }]}>{localizeNumber(it.position, isRTL)}</Text>}
+                      </View>
+                      <Text
+                        style={[styles.upText, { color: itDone ? c.inkFaint : c.ink, textAlign: isRTL ? "right" : "left" }]}
+                        numberOfLines={1}
+                      >
+                        {it.arabic}
                       </Text>
-                    </View>
-                  </View>
-                ))}
+                      <View style={[styles.repPill, { backgroundColor: c.surface, borderColor: c.divider }]}>
+                        <Text style={[styles.repPillText, { color: itDone ? c.green : c.inkMuted }]}>
+                          {itCount > 0 && !itDone
+                            ? `${localizeNumber(itCount, isRTL)}/${localizeNumber(it.repetitions, isRTL)}`
+                            : `${t.adhkar.times}${localizeNumber(it.repetitions, isRTL)}`}
+                        </Text>
+                      </View>
+                    </TouchableOpacity>
+                  );
+                })}
               </View>
             )}
           </>
@@ -277,4 +339,13 @@ const styles = StyleSheet.create({
   completeSub: { fontSize: 14, textAlign: "center" },
   doneBtn: { marginTop: 18, paddingHorizontal: 40, paddingVertical: 14, borderRadius: 14, minWidth: 200, alignItems: "center" },
   doneBtnText: { fontFamily: "Georgia", fontSize: 16, color: "#0e1a2b" },
+  keepGoing: { fontSize: 13, textDecorationLine: "underline" },
+
+  // "Done for today" pill under the counter
+  doneForToday: {
+    alignSelf: "center", alignItems: "center", gap: 7,
+    marginTop: 18, paddingHorizontal: 16, paddingVertical: 9,
+    borderRadius: 99, borderWidth: 0.5,
+  },
+  doneForTodayText: { fontSize: 13, fontWeight: "500" },
 });

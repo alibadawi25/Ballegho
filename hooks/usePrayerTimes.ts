@@ -20,6 +20,8 @@ export interface PrayerTimesState {
   currentPrayer: PrayerEntry | null;
   /** Whole minutes since `currentPrayer`'s adhān (0 when none). */
   minutesSincePrayer: number;
+  /** Total seconds since `currentPrayer`'s adhān (0 when none) — for the -MM:SS clock. */
+  secondsSincePrayer: number;
   city: string | null;
   resolvedMethod: CalcMethod | null;
   loading: boolean;
@@ -89,6 +91,7 @@ export function usePrayerTimes(): PrayerTimesState & { retry: () => void } {
     secondsUntil: 0,
     currentPrayer: null,
     minutesSincePrayer: 0,
+    secondsSincePrayer: 0,
     city: null,
     resolvedMethod: null,
     loading: true,
@@ -178,8 +181,9 @@ export function usePrayerTimes(): PrayerTimesState & { retry: () => void } {
         const currentPrayer =
           lastPassed && sinceMs <= CURRENT_PRAYER_WINDOW_MIN * 60_000 ? lastPassed : null;
         const minutesSincePrayer = currentPrayer ? Math.floor(sinceMs / 60_000) : 0;
+        const secondsSincePrayer = currentPrayer ? Math.floor(sinceMs / 1000) : 0;
 
-        setState({ prayers, nextPrayer: next, minutesUntil, secondsUntil, currentPrayer, minutesSincePrayer, city, resolvedMethod, loading: false, permissionDenied: false });
+        setState({ prayers, nextPrayer: next, minutesUntil, secondsUntil, currentPrayer, minutesSincePrayer, secondsSincePrayer, city, resolvedMethod, loading: false, permissionDenied: false });
       }
 
       compute();
