@@ -29,8 +29,8 @@ export default function Step6() {
   const insets  = useSafeAreaInsets();
   const { t, isRTL } = useLang();
   const s = t.onboarding.s6;
-  const { signUp } = useAuth();
-  const { wakeTime, sleepTime, consistencyLevel, selectedIds, anchorId } = useOnboarding();
+  const { signUp, session } = useAuth();
+  const { wakeTime, sleepTime, consistencyLevel, selectedIds, anchorId, reset } = useOnboarding();
 
   const [anchorName,   setAnchorName]   = useState("");
   const [anchorNameAr, setAnchorNameAr] = useState("");
@@ -52,25 +52,31 @@ export default function Step6() {
   }, [anchorId]);
 
   async function handleBegin() {
-    if (!name.trim())         { setError(s.errName);     return; }
-    if (!email.trim())        { setError(s.errEmail);    return; }
-    if (password.length < 6)  { setError(s.errPassword); return; }
-
-    setSaving(true);
     setError(null);
+    let userId = session?.user?.id ?? null;
 
-    // 1. Create account — email confirmation is disabled on this project, so a
-    //    session is returned immediately. The DB trigger also immediately creates
-    //    the user_behavioral_profile row (with onboarding_complete=false).
-    const authError = await signUp(email.trim(), password, name.trim());
-    if (authError) { setError(authError.message); setSaving(false); return; }
+    // 1. If not signed in yet, validate the sign-up form and create the account.
+    //    If ALREADY signed in (arrived here via sign-in / sign-up), skip signup
+    //    and just save this onboarding to the existing account.
+    if (!userId) {
+      if (!name.trim())         { setError(s.errName);     return; }
+      if (!email.trim())        { setError(s.errEmail);    return; }
+      if (password.length < 6)  { setError(s.errPassword); return; }
 
-    // 2. Read the session that was just created.
-    const { data: { session } } = await supabase.auth.getSession();
-    const userId = session?.user?.id ?? null;
-    if (!userId) { setError(s.errGeneric); setSaving(false); return; }
+      setSaving(true);
+      // Email confirmation is disabled on this project, so a session is returned
+      // immediately. The DB trigger creates user_behavioral_profile (onboarding_complete=false).
+      const authError = await signUp(email.trim(), password, name.trim());
+      if (authError) { setError(authError.message); setSaving(false); return; }
 
-    // 3. Write onboarding data — BEFORE navigating so AuthGate reads the
+      const { data } = await supabase.auth.getSession();
+      userId = data.session?.user?.id ?? null;
+      if (!userId) { setError(s.errGeneric); setSaving(false); return; }
+    } else {
+      setSaving(true);
+    }
+
+    // 2. Write onboarding data — BEFORE navigating so AuthGate reads the
     //    correct onboarding_complete=true when segments flip to "(tabs)".
     const [profileResult, sunnahResult] = await Promise.all([
       supabase.from("user_behavioral_profile").upsert({
@@ -103,6 +109,7 @@ export default function Step6() {
       return;
     }
 
+    reset();   // clear the saved onboarding draft now that it's persisted
     router.replace("/(tabs)");
   }
 
@@ -134,50 +141,55 @@ export default function Step6() {
           <Text style={[styles.closing, isRTL && styles.closingAr]}>{s.closing}</Text>
         </View>
 
-        {/* Divider */}
-        <View style={styles.dividerRow}>
-          <View style={styles.dividerLine} />
-          <Text style={isRTL ? styles.dividerLabelAr : styles.dividerLabel}>{s.saveLabel}</Text>
-          <View style={styles.dividerLine} />
-        </View>
+        {/* Sign-up form — only for NEW users. If already signed in (arrived via
+            sign-in/sign-up), we skip account creation entirely. */}
+        {!session && (
+          <>
+            {/* Divider */}
+            <View style={styles.dividerRow}>
+              <View style={styles.dividerLine} />
+              <Text style={isRTL ? styles.dividerLabelAr : styles.dividerLabel}>{s.saveLabel}</Text>
+              <View style={styles.dividerLine} />
+            </View>
 
-        {/* Sign-up form */}
-        <View style={styles.form}>
-          {/* Name */}
-          <Field
-            icon="user"
-            placeholder={s.namePh}
-            value={name}
-            onChange={setName}
-            autoCapitalize="words"
-            isRTL={isRTL}
-          />
-          {/* Email */}
-          <Field
-            icon="mail"
-            placeholder={s.emailPh}
-            value={email}
-            onChange={setEmail}
-            keyboardType="email-address"
-            autoCapitalize="none"
-            isRTL={isRTL}
-          />
-          {/* Password */}
-          <View style={[styles.inputRow, isRTL && { flexDirection: "row-reverse" }, { backgroundColor: C.surface, borderColor: C.divider }]}>
-            <Feather name="lock" size={15} color={C.faint} />
-            <TextInput
-              value={password}
-              onChangeText={setPassword}
-              placeholder={s.passwordPh}
-              placeholderTextColor={C.faint}
-              secureTextEntry={!showPass}
-              style={[styles.input, { color: C.ink, textAlign: isRTL ? "right" : "left" }]}
-            />
-            <TouchableOpacity onPress={() => setShowPass(!showPass)} activeOpacity={0.7}>
-              <Feather name={showPass ? "eye-off" : "eye"} size={15} color={C.faint} />
-            </TouchableOpacity>
-          </View>
-        </View>
+            <View style={styles.form}>
+              {/* Name */}
+              <Field
+                icon="user"
+                placeholder={s.namePh}
+                value={name}
+                onChange={setName}
+                autoCapitalize="words"
+                isRTL={isRTL}
+              />
+              {/* Email */}
+              <Field
+                icon="mail"
+                placeholder={s.emailPh}
+                value={email}
+                onChange={setEmail}
+                keyboardType="email-address"
+                autoCapitalize="none"
+                isRTL={isRTL}
+              />
+              {/* Password */}
+              <View style={[styles.inputRow, isRTL && { flexDirection: "row-reverse" }, { backgroundColor: C.surface, borderColor: C.divider }]}>
+                <Feather name="lock" size={15} color={C.faint} />
+                <TextInput
+                  value={password}
+                  onChangeText={setPassword}
+                  placeholder={s.passwordPh}
+                  placeholderTextColor={C.faint}
+                  secureTextEntry={!showPass}
+                  style={[styles.input, { color: C.ink, textAlign: isRTL ? "right" : "left" }]}
+                />
+                <TouchableOpacity onPress={() => setShowPass(!showPass)} activeOpacity={0.7}>
+                  <Feather name={showPass ? "eye-off" : "eye"} size={15} color={C.faint} />
+                </TouchableOpacity>
+              </View>
+            </View>
+          </>
+        )}
 
         {/* Error */}
         {error && (
@@ -197,17 +209,19 @@ export default function Step6() {
           }
         </TouchableOpacity>
 
-        {/* Already have account */}
-        <TouchableOpacity
-          style={{ alignItems: "center", marginTop: 16 }}
-          onPress={() => router.replace("/(auth)/sign-in")}
-          activeOpacity={0.7}
-        >
-          <Text style={[{ fontSize: 13, color: C.faint }, isRTL && { fontFamily: "Amiri_400Regular", fontSize: 15 }]}>
-            {s.haveAccount}{" "}
-            <Text style={{ color: C.gold }}>{s.signIn}</Text>
-          </Text>
-        </TouchableOpacity>
+        {/* Already have account — only relevant for not-yet-signed-in users */}
+        {!session && (
+          <TouchableOpacity
+            style={{ alignItems: "center", marginTop: 16 }}
+            onPress={() => router.replace("/(auth)/sign-in")}
+            activeOpacity={0.7}
+          >
+            <Text style={[{ fontSize: 13, color: C.faint }, isRTL && { fontFamily: "Amiri_400Regular", fontSize: 15 }]}>
+              {s.haveAccount}{" "}
+              <Text style={{ color: C.gold }}>{s.signIn}</Text>
+            </Text>
+          </TouchableOpacity>
+        )}
 
       </ScrollView>
     </KeyboardAvoidingView>

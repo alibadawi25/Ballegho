@@ -162,10 +162,11 @@ export default function SignInScreen() {
           }
         </TouchableOpacity>
 
-        {/* Sign up link */}
+        {/* Sign up link — new users go through onboarding; the account is
+            created at the final step (single, consistent signup path). */}
         <TouchableOpacity
           style={{ marginTop: 20, alignItems: "center" }}
-          onPress={() => router.replace("/(auth)/sign-up")}
+          onPress={() => router.replace("/(onboarding)/step0")}
           activeOpacity={0.7}
         >
           <Text style={{ fontSize: 13, color: c.inkMuted }}>

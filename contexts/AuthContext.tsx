@@ -22,6 +22,7 @@
 
 import React, { createContext, useContext, useEffect, useState } from "react";
 import { Session, User, AuthError } from "@supabase/supabase-js";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { supabase } from "@/lib/supabase";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -81,6 +82,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const signOut = async () => {
     await supabase.auth.signOut();
+    // Clear any half-finished onboarding draft so the next user on this device
+    // starts fresh (key mirrors ONBOARDING_DRAFT_KEY in OnboardingContext).
+    AsyncStorage.removeItem("@ballegho/onboarding-draft").catch(() => {});
   };
 
   // ─────────────────────────────────────────────────────────────────────────────

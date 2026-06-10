@@ -18,15 +18,18 @@
  *
  *   const { selectedIds, toggleSunnah, canSelectMore } = useOnboarding();
  *
- * ─── Provider placement ───────────────────────────────────────────────────────
+ * ─── Persistence ──────────────────────────────────────────────────────────────
  *
- *   <OnboardingProvider> wraps the (onboarding) group layout so the context
- *   is destroyed when the user exits onboarding (either completing it or
- *   navigating to sign-in). This prevents stale data from leaking into
- *   subsequent onboarding runs.
+ *   The draft is mirrored to AsyncStorage so leaving onboarding (e.g. tapping
+ *   "Sign in", a reload, or backgrounding the app) and returning does NOT wipe
+ *   the user's progress — they pick up where they left off instead of starting
+ *   over. `reset()` clears it (called by step6 on success and on sign-out).
  */
 
-import React, { createContext, useContext, useState } from "react";
+import React, { createContext, useContext, useEffect, useState } from "react";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+
+export const ONBOARDING_DRAFT_KEY = "@ballegho/onboarding-draft";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -63,6 +66,8 @@ interface OnboardingState {
   maxSunnahs:       number;
   /** True when the user can still select more sunnahs (< maxSunnahs). */
   canSelectMore:    boolean;
+  /** Clears the in-memory state AND the persisted draft (call on completion). */
+  reset:            () => void;
 }
 
 // ─── Default times ────────────────────────────────────────────────────────────
@@ -113,6 +118,43 @@ export function OnboardingProvider({ children }: { children: React.ReactNode }) 
     });
   }
 
+  // ── Hydrate the draft once on mount; then save on every change. The
+  //    `hydrated` gate prevents the initial defaults from clobbering a saved
+  //    draft before it has loaded.
+  const [hydrated, setHydrated] = useState(false);
+  useEffect(() => {
+    AsyncStorage.getItem(ONBOARDING_DRAFT_KEY).then((raw) => {
+      if (raw) {
+        try {
+          const d = JSON.parse(raw);
+          if (d.wake)  { const w = new Date(); w.setHours(d.wake.h,  d.wake.m,  0, 0); setWakeTime(w); }
+          if (d.sleep) { const s = new Date(); s.setHours(d.sleep.h, d.sleep.m, 0, 0); setSleepTime(s); }
+          if (d.consistencyLevel)        setConsistency(d.consistencyLevel);
+          if (Array.isArray(d.selectedIds)) setSelected(d.selectedIds);
+          if (d.anchorId)                setAnchor(d.anchorId);
+        } catch { /* ignore corrupt draft */ }
+      }
+    }).finally(() => setHydrated(true));
+  }, []);
+
+  useEffect(() => {
+    if (!hydrated) return;
+    AsyncStorage.setItem(ONBOARDING_DRAFT_KEY, JSON.stringify({
+      wake:  { h: wakeTime.getHours(),  m: wakeTime.getMinutes()  },
+      sleep: { h: sleepTime.getHours(), m: sleepTime.getMinutes() },
+      consistencyLevel, selectedIds, anchorId,
+    })).catch(() => {});
+  }, [hydrated, wakeTime, sleepTime, consistencyLevel, selectedIds, anchorId]);
+
+  function reset() {
+    AsyncStorage.removeItem(ONBOARDING_DRAFT_KEY).catch(() => {});
+    setWakeTime(defaultWake);
+    setSleepTime(defaultSleep);
+    setConsistency(null);
+    setSelected([]);
+    setAnchor(null);
+  }
+
   return (
     <Ctx.Provider value={{
       wakeTime,
@@ -127,6 +169,7 @@ export function OnboardingProvider({ children }: { children: React.ReactNode }) 
       setAnchor,
       maxSunnahs,
       canSelectMore: selectedIds.length < maxSunnahs,
+      reset,
     }}>
       {children}
     </Ctx.Provider>
