@@ -15,6 +15,7 @@ import { DifficultyRatingCard } from "@/components/DifficultyRatingCard";
 import { SunnahGroup, DayProgress } from "@/components/home/SunnahChecklist";
 // WeekStrip now rendered inside DayProgress card
 import MilestoneCard, { MILESTONE_DAYS } from "@/components/MilestoneCard";
+import FirstTodayTip from "@/components/FirstTodayTip";
 import { useNotifications } from "@/hooks/useNotifications";
 import { isApproachingMaghrib, isPastMaghrib, minutesUntilMaghrib, getEffectiveDate } from "@/lib/islamicDate";
 import type { ActiveSunnah, GroupKey } from "@/hooks/useSunnahs";
@@ -189,6 +190,7 @@ export default function HomeScreen() {
   }, [router]);
 
   return (
+    <>
     <ScrollView
       style={{ flex: 1, backgroundColor: c.bg }}
       contentContainerStyle={{ paddingBottom: 32 }}
@@ -494,5 +496,9 @@ export default function HomeScreen() {
         )}
       </View>
     </ScrollView>
+
+    {/* One-time welcome orienting first-time users to the core idea. */}
+    <FirstTodayTip ready={!loading && totalCount > 0} />
+    </>
   );
 }

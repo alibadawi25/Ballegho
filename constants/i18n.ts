@@ -105,6 +105,19 @@ export const strings = {
       cta:       "Let's go",
     },
 
+    // First-Today welcome (one-time orientation to the core idea)
+    todayTip: {
+      title:   "Welcome to Ballegho",
+      body:    "A calmer way to live the Sunnah — one habit at a time.",
+      p1Title: "Begin with your anchor",
+      p1Sub:   "One sunnah, every day. Small and steady is the whole idea.",
+      p2Title: "It grows with you",
+      p2Sub:   "Stay consistent and Ballegho gently adds more — you never have to pick them yourself.",
+      p3Title: "No pressure, ever",
+      p3Sub:   "Miss a day? Just continue. Even doing part of it counts.",
+      cta:     "Bismillāh, let's begin",
+    },
+
     // Streaks / Progress tab
     streaks: {
       eyebrow:        "Your journey",
@@ -119,6 +132,12 @@ export const strings = {
       milestones:     "Milestones",
       mostConsistent: "Most consistent",
       noData:         "Complete sunnahs to start building your streak.",
+      freezeTitle:    "Streak freeze",
+      freezeSub:      "Life happens. A freeze protects your streak the day you miss one.",
+      freezeReady:    "ready",
+      freezeGet:      "Get one",
+      freezeFull:     "Full",
+      freezeNotEnough:"Not enough Nūr",
     },
 
     // Sunnah detail page
@@ -461,6 +480,19 @@ export const strings = {
       cta:       "هيا بنا",
     },
 
+    // ترحيب أول مرة في "اليوم" (تعريف لمرة واحدة بفكرة التطبيق)
+    todayTip: {
+      title:   "أهلًا بك في بلّغوا",
+      body:    "طريقة هادئة لإحياء السنّة — عادة واحدة في كل مرة.",
+      p1Title: "ابدأ بمرساتك",
+      p1Sub:   "سنّة واحدة كل يوم. القليل الدائم هو الفكرة كلّها.",
+      p2Title: "تنمو معك",
+      p2Sub:   "داوِم يَزِدْك بلّغوا برفق — دون أن تختار بنفسك أبدًا.",
+      p3Title: "بلا ضغطٍ أبدًا",
+      p3Sub:   "فاتك يوم؟ واصِل فحسب. وحتى القليل يُحتسب.",
+      cta:     "بسم الله، لنبدأ",
+    },
+
     // Streaks / Progress tab
     streaks: {
       eyebrow:        "رحلتك",
@@ -475,6 +507,12 @@ export const strings = {
       milestones:     "الإنجازات",
       mostConsistent: "الأكثر مواظبة",
       noData:         "أتمم السنن لتبدأ ببناء سلسلتك.",
+      freezeTitle:    "تجميد العادة",
+      freezeSub:      "تحدث الحياة. التجميد يحمي سلسلتك في اليوم الذي يفوتك.",
+      freezeReady:    "جاهزة",
+      freezeGet:      "احصل على واحدة",
+      freezeFull:     "مكتملة",
+      freezeNotEnough:"النور غير كافٍ",
     },
 
     // Sunnah detail page

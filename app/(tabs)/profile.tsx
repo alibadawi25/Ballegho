@@ -15,7 +15,7 @@
 
 import {
   Text, View, TouchableOpacity, ScrollView, Alert,
-  TextInput, Modal, Platform, ActivityIndicator, StyleSheet,
+  TextInput, Modal, Platform, ActivityIndicator, StyleSheet, Switch,
 } from "react-native";
 import DateTimePicker from "@react-native-community/datetimepicker";
 import { useState, useEffect, useCallback } from "react";
@@ -28,12 +28,13 @@ import { useFavorites } from "@/hooks/useFavorites";
 import { useSettings } from "@/contexts/SettingsContext";
 import { usePrayerTimes } from "@/hooks/usePrayerTimes";
 import { supabase } from "@/lib/supabase";
-import type { LangPref, ThemePref, CalcMethod } from "@/contexts/SettingsContext";
+import { localizeNumber } from "@/lib/arabicNumerals";
+import type { LangPref, ThemePref, CalcMethod, NotifKey } from "@/contexts/SettingsContext";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 type ConsistencyLevel = "beginner" | "some" | "consistent";
-type ModalType = "name" | "schedule" | "practice" | "sunnahs" | "language" | "appearance" | "prayer" | null;
+type ModalType = "name" | "schedule" | "practice" | "sunnahs" | "language" | "appearance" | "prayer" | "reminders" | null;
 
 interface BehavioralProfile {
   wake_time:         string; // "HH:MM"
@@ -504,6 +505,84 @@ function AppearanceSheet({
   );
 }
 
+function RemindersSheet({
+  visible, c, onClose,
+}: { visible: boolean; c: C; onClose: () => void }) {
+  const { isRTL } = useLang();
+  const { notifPrefs, setNotifPref } = useSettings();
+
+  // Per-type rows (gated by the master switch).
+  const rows: { key: NotifKey; icon: string; en: string; ar: string; subEn: string; subAr: string }[] = [
+    { key: "morning",  icon: "sunrise",  en: "Morning",        ar: "الصباح",       subEn: "After Fajr",        subAr: "بعد الفجر" },
+    { key: "evening",  icon: "sunset",   en: "Evening adhkār", ar: "أذكار المساء", subEn: "After ʿAṣr",        subAr: "بعد العصر" },
+    { key: "night",    icon: "moon",     en: "Before sleep",   ar: "قبل النوم",     subEn: "After ʿIshāʾ",      subAr: "بعد العشاء" },
+    { key: "streak",   icon: "zap",      en: "Seal your streak", ar: "أتمّ يومك",  subEn: "Before Maghrib",    subAr: "قبل المغرب" },
+    { key: "occasion", icon: "calendar", en: "Friday & fasting", ar: "الجمعة والصيام", subEn: "al-Kahf · fast eves", subAr: "الكهف · ليالي الصيام" },
+  ];
+
+  const master = notifPrefs.enabled;
+
+  return (
+    <Sheet visible={visible} title={isRTL ? "التذكيرات" : "Reminders"} onClose={onClose} c={c}>
+      <View style={{ padding: 20, gap: 10 }}>
+        {/* Master toggle */}
+        <View style={[s.choiceCard, isRTL && { flexDirection: "row-reverse" },
+          { backgroundColor: c.surface, borderColor: master ? c.gold : c.divider }]}>
+          <View style={[s.rowIcon, { backgroundColor: c.gold + "18", marginRight: isRTL ? 0 : 12, marginLeft: isRTL ? 12 : 0 }]}>
+            <Feather name="bell" size={16} color={c.gold} />
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={{ fontSize: 15, color: c.ink, fontWeight: "600", textAlign: isRTL ? "right" : "left" }}>
+              {isRTL ? "كل التذكيرات" : "All reminders"}
+            </Text>
+            <Text style={{ fontSize: 11, color: c.inkMuted, marginTop: 2, textAlign: isRTL ? "right" : "left" }}>
+              {isRTL ? "تنبيهات لطيفة مرتبطة بأوقات الصلاة" : "Gentle nudges anchored to prayer times"}
+            </Text>
+          </View>
+          <Switch
+            value={master}
+            onValueChange={(v) => setNotifPref("enabled", v)}
+            trackColor={{ false: c.divider, true: c.gold }}
+            thumbColor="#fff"
+          />
+        </View>
+
+        {/* Per-type toggles — dimmed + disabled when master is off */}
+        <View style={{ opacity: master ? 1 : 0.4, gap: 10 }} pointerEvents={master ? "auto" : "none"}>
+          {rows.map((r) => (
+            <View key={r.key} style={[s.choiceCard, isRTL && { flexDirection: "row-reverse" },
+              { backgroundColor: c.surface, borderColor: c.divider }]}>
+              <View style={[s.rowIcon, { backgroundColor: c.gold + "14", marginRight: isRTL ? 0 : 12, marginLeft: isRTL ? 12 : 0 }]}>
+                <Feather name={r.icon as any} size={15} color={c.inkMuted} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={{ fontSize: 14, color: c.ink, textAlign: isRTL ? "right" : "left" }}>
+                  {isRTL ? r.ar : r.en}
+                </Text>
+                <Text style={{ fontSize: 11, color: c.inkMuted, marginTop: 2, textAlign: isRTL ? "right" : "left" }}>
+                  {isRTL ? r.subAr : r.subEn}
+                </Text>
+              </View>
+              <Switch
+                value={notifPrefs[r.key]}
+                onValueChange={(v) => setNotifPref(r.key, v)}
+                trackColor={{ false: c.divider, true: c.gold }}
+                thumbColor="#fff"
+              />
+            </View>
+          ))}
+        </View>
+
+        <Text style={{ fontSize: 11, color: c.inkFaint, textAlign: "center", marginTop: 4, lineHeight: 16 }}>
+          {isRTL
+            ? "تُرسَل التذكيرات على هذا الجهاز فقط حسب أوقات صلاتك."
+            : "Reminders are sent on this device only, based on your prayer times."}
+        </Text>
+      </View>
+    </Sheet>
+  );
+}
+
 const CALC_OPTS = [
   { value: "auto",              en: "Auto (by location)",   ar: "تلقائي (حسب الموقع)"   },
   { value: "MuslimWorldLeague", en: "Muslim World League",  ar: "رابطة العالم الإسلامي" },
@@ -575,7 +654,7 @@ export default function ProfileScreen() {
   const { user, signOut } = useAuth();
   const { count: savedCount, reload: reloadFavs } = useFavorites();
   useFocusEffect(useCallback(() => { reloadFavs(); }, [reloadFavs]));
-  const { langPref, themePref, calcMethod } = useSettings();
+  const { langPref, themePref, calcMethod, notifPrefs } = useSettings();
   const c = mkC(isDark);
 
   const [modal, setModal] = useState<ModalType>(null);
@@ -738,6 +817,12 @@ export default function ProfileScreen() {
   const themeValue = themePref === "light" ? (isRTL ? "فاتح" : "Light")
     : themePref === "dark" ? (isRTL ? "داكن" : "Dark") : (isRTL ? "تلقائي" : "Auto");
   const prayerValue = CALC_OPTS.find((o) => o.value === calcMethod)?.[isRTL ? "ar" : "en"] ?? "—";
+  const reminderValue = !notifPrefs.enabled
+    ? (isRTL ? "متوقّفة" : "Off")
+    : (() => {
+        const on = (["morning","evening","night","streak","occasion"] as const).filter((k) => notifPrefs[k]).length;
+        return on === 5 ? (isRTL ? "مفعّلة" : "On") : `${localizeNumber(on, isRTL)}/${localizeNumber(5, isRTL)}`;
+      })();
 
   // ─────────────────────────────────────────────────────────────────────────
 
@@ -804,6 +889,9 @@ export default function ProfileScreen() {
               <Row icon="moon" label={isRTL ? "المظهر" : "Appearance"}
                 value={themeValue} onPress={() => setModal("appearance")}
                 isRTL={isRTL} c={c} />
+              <Row icon="bell" label={isRTL ? "التذكيرات" : "Reminders"}
+                value={reminderValue} onPress={() => setModal("reminders")}
+                isRTL={isRTL} c={c} />
               <Row icon="compass" label={isRTL ? "أوقات الصلاة" : "Prayer times"}
                 value={prayerValue.length > 14 ? prayerValue.slice(0,14) + "…" : prayerValue}
                 onPress={() => setModal("prayer")}
@@ -864,6 +952,7 @@ export default function ProfileScreen() {
       />
       <LanguageSheet   visible={modal === "language"}   c={c} onClose={() => setModal(null)} />
       <AppearanceSheet visible={modal === "appearance"} c={c} onClose={() => setModal(null)} />
+      <RemindersSheet  visible={modal === "reminders"}  c={c} onClose={() => setModal(null)} />
       <PrayerSheet     visible={modal === "prayer"}     c={c} onClose={() => setModal(null)} />
     </>
   );

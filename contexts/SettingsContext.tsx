@@ -36,6 +36,21 @@ import type { Lang } from "@/constants/i18n";
 export type ThemePref  = "light" | "dark" | "system";
 export type LangPref   = "ar" | "en" | "system";
 
+/** Per-type reminder switches. `enabled` is the master toggle. */
+export interface NotifPrefs {
+  enabled:  boolean;  // master on/off
+  morning:  boolean;  // Fajr "good morning" nudge
+  evening:  boolean;  // evening adhkār (after ʿAṣr)
+  night:    boolean;  // sleeping adhkār (after ʿIshāʾ)
+  streak:   boolean;  // "seal your streak" before Maghrib
+  occasion: boolean;  // Friday al-Kahf · Mon/Thu fast eve
+}
+export type NotifKey = keyof NotifPrefs;
+
+export const DEFAULT_NOTIF_PREFS: NotifPrefs = {
+  enabled: true, morning: true, evening: true, night: true, streak: true, occasion: true,
+};
+
 /**
  * Prayer time calculation methods from the adhan library.
  * "auto" = detect from device location country code.
@@ -59,9 +74,11 @@ interface SettingsState {
   langPref:    LangPref;
   themePref:   ThemePref;
   calcMethod:  CalcMethod;
+  notifPrefs:  NotifPrefs;
   setLangPref:   (v: LangPref)   => void;
   setThemePref:  (v: ThemePref)  => void;
   setCalcMethod: (v: CalcMethod) => void;
+  setNotifPref:  (k: NotifKey, v: boolean) => void;
   // Resolved values (never "system"; ready to use in render)
   lang:   Lang;
   isDark: boolean;
@@ -72,6 +89,7 @@ interface SettingsState {
 const LANG_KEY   = "@ballegho/lang";
 const THEME_KEY  = "@ballegho/theme";
 const CALC_KEY   = "@ballegho/calcMethod";
+const NOTIF_KEY  = "@ballegho/notifPrefs";
 
 // ─── Context ──────────────────────────────────────────────────────────────────
 
@@ -85,14 +103,20 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
   const [langPref,   setLangPrefState]   = useState<LangPref>("system");
   const [themePref,  setThemePrefState]  = useState<ThemePref>("system");
   const [calcMethod, setCalcMethodState] = useState<CalcMethod>("auto");
+  const [notifPrefs, setNotifPrefsState] = useState<NotifPrefs>(DEFAULT_NOTIF_PREFS);
   const [loaded, setLoaded] = useState(false);
 
   // Load all prefs from AsyncStorage in a single batch read
   useEffect(() => {
-    AsyncStorage.multiGet([LANG_KEY, THEME_KEY, CALC_KEY]).then((pairs) => {
+    AsyncStorage.multiGet([LANG_KEY, THEME_KEY, CALC_KEY, NOTIF_KEY]).then((pairs) => {
       setLangPrefState( (pairs[0][1] as LangPref   | null) ?? "system");
       setThemePrefState((pairs[1][1] as ThemePref  | null) ?? "system");
       setCalcMethodState((pairs[2][1] as CalcMethod | null) ?? "auto");
+      // Merge stored notif prefs over defaults so new keys default to on.
+      try {
+        const stored = pairs[3][1] ? JSON.parse(pairs[3][1] as string) : {};
+        setNotifPrefsState({ ...DEFAULT_NOTIF_PREFS, ...stored });
+      } catch { setNotifPrefsState(DEFAULT_NOTIF_PREFS); }
       setLoaded(true);
     });
   }, []);
@@ -110,6 +134,13 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
   const setCalcMethod = (v: CalcMethod) => {
     setCalcMethodState(v);
     AsyncStorage.setItem(CALC_KEY, v);
+  };
+  const setNotifPref = (k: NotifKey, v: boolean) => {
+    setNotifPrefsState((prev) => {
+      const next = { ...prev, [k]: v };
+      AsyncStorage.setItem(NOTIF_KEY, JSON.stringify(next));
+      return next;
+    });
   };
 
   // ── Resolved values ─────────────────────────────────────────────────────────
@@ -129,8 +160,8 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
 
   return (
     <Ctx.Provider value={{
-      langPref, themePref, calcMethod,
-      setLangPref, setThemePref, setCalcMethod,
+      langPref, themePref, calcMethod, notifPrefs,
+      setLangPref, setThemePref, setCalcMethod, setNotifPref,
       lang, isDark,
     }}>
       {children}

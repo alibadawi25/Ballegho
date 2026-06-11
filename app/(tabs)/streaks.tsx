@@ -11,16 +11,19 @@
  * (like the milestone card) — the deep-ink hero is core to the brand.
  */
 
-import { Text, View, ScrollView, ActivityIndicator, StyleSheet } from "react-native";
-import { useCallback } from "react";
+import { Text, View, ScrollView, ActivityIndicator, StyleSheet, TouchableOpacity, Platform } from "react-native";
+import { useCallback, useState } from "react";
 import { Feather } from "@expo/vector-icons";
+import * as Haptics from "expo-haptics";
 import { useFocusEffect } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useLang } from "@/hooks/useLang";
 import { useStreaks, type HeatLevel, type ConsistencyItem } from "@/hooks/useStreaks";
 import { usePrayerCtx } from "@/contexts/PrayerTimesContext";
+import { useNur, FREEZE_COST, FREEZE_MAX } from "@/contexts/NurContext";
+import LanternIcon from "@/components/LanternIcon";
 import { colors, NIGHT, PALETTE, type Colors } from "@/constants/theme";
-import { toArabicDigits } from "@/lib/arabicNumerals";
+import { toArabicDigits, localizeNumber } from "@/lib/arabicNumerals";
 
 // Design milestone ladder for this screen (distinct from the celebration set).
 const MILESTONES = [7, 21, 40, 100] as const;
@@ -126,6 +129,9 @@ export default function StreaksScreen() {
               <Stat label={t.streaks.total}     value={isRTL ? toArabicDigits(totalDays) : String(totalDays)}         isRTL={isRTL} />
             </View>
           </View>
+
+          {/* ── Streak freeze (Nūr sink) ────────────────────── */}
+          <StreakFreezeCard c={c} isRTL={isRTL} t={t} />
 
           {/* ── Activity heatmap ────────────────────────────── */}
           <View style={{ paddingHorizontal: 22, marginTop: 26 }}>
@@ -263,6 +269,71 @@ export default function StreaksScreen() {
 
 // ─── Sub-components ─────────────────────────────────────────────────────────────
 
+function StreakFreezeCard({ c, isRTL, t }: { c: Colors; isRTL: boolean; t: ReturnType<typeof useLang>["t"] }) {
+  const { balance, freezes, buyFreeze } = useNur();
+  const [busy, setBusy] = useState(false);
+
+  const atMax     = freezes >= FREEZE_MAX;
+  const canAfford = balance >= FREEZE_COST;
+  const disabled  = busy || atMax || !canAfford;
+  const label     = atMax ? t.streaks.freezeFull : !canAfford ? t.streaks.freezeNotEnough : t.streaks.freezeGet;
+
+  async function onBuy() {
+    if (disabled) return;
+    setBusy(true);
+    const res = await buyFreeze();
+    if (Platform.OS !== "web") {
+      Haptics.notificationAsync(res.ok ? Haptics.NotificationFeedbackType.Success : Haptics.NotificationFeedbackType.Warning);
+    }
+    setBusy(false);
+  }
+
+  return (
+    <View style={[styles.freezeCard, { backgroundColor: c.surface, borderColor: freezes > 0 ? c.gold + "44" : c.divider }]}>
+      {/* Header: icon + title + freeze pips */}
+      <View style={{ flexDirection: isRTL ? "row-reverse" : "row", alignItems: "center", gap: 10 }}>
+        <View style={[styles.freezeIcon, { backgroundColor: c.gold + "16" }]}>
+          <Feather name="shield" size={16} color={c.gold} />
+        </View>
+        <Text style={[styles.freezeTitle, { color: c.ink, flex: 1, textAlign: isRTL ? "right" : "left" }, isRTL && { fontFamily: "Amiri_700Bold", fontSize: 16 }]}>
+          {t.streaks.freezeTitle}
+        </Text>
+        <View style={{ flexDirection: "row", gap: 4 }}>
+          {Array.from({ length: FREEZE_MAX }).map((_, i) => (
+            <Feather key={i} name="shield" size={13} color={i < freezes ? c.gold : c.divider} />
+          ))}
+        </View>
+      </View>
+
+      <Text style={[styles.freezeSub, { color: c.inkMuted, textAlign: isRTL ? "right" : "left" }, isRTL && { fontFamily: "Amiri_400Regular", fontSize: 13, lineHeight: 20 }]}>
+        {t.streaks.freezeSub}
+      </Text>
+
+      <TouchableOpacity
+        onPress={onBuy}
+        disabled={disabled}
+        activeOpacity={0.85}
+        style={[styles.freezeBtn, {
+          backgroundColor: disabled ? "transparent" : c.gold,
+          borderColor: disabled ? c.divider : c.gold,
+          flexDirection: isRTL ? "row-reverse" : "row",
+          opacity: busy ? 0.6 : 1,
+        }]}
+      >
+        <Text style={[styles.freezeBtnText, { color: disabled ? c.inkMuted : "#0e1a2b" }, isRTL && { fontFamily: "Amiri_700Bold" }]}>
+          {label}
+        </Text>
+        {!atMax && canAfford && (
+          <View style={{ flexDirection: isRTL ? "row-reverse" : "row", alignItems: "center", gap: 3 }}>
+            <Text style={{ color: "#0e1a2b", fontSize: 13, fontFamily: "Georgia" }}>· {localizeNumber(FREEZE_COST, isRTL)}</Text>
+            <LanternIcon size={12} color="#0e1a2b" />
+          </View>
+        )}
+      </TouchableOpacity>
+    </View>
+  );
+}
+
 function Stat({ label, value, isRTL }: { label: string; value: string; isRTL: boolean }) {
   return (
     <View style={{ flex: 1, alignItems: "center" }}>
@@ -394,4 +465,19 @@ const styles = StyleSheet.create({
 
   // Consistency
   pct: { fontFamily: "Georgia", fontSize: 13, marginLeft: 8 },
+
+  // Streak freeze
+  freezeCard: {
+    marginHorizontal: 22, marginTop: 14,
+    borderRadius: 16, borderWidth: 0.5,
+    padding: 16, gap: 10,
+  },
+  freezeIcon: { width: 32, height: 32, borderRadius: 16, alignItems: "center", justifyContent: "center", flexShrink: 0 },
+  freezeTitle: { fontFamily: "Georgia", fontSize: 15 },
+  freezeSub: { fontSize: 12, lineHeight: 18 },
+  freezeBtn: {
+    alignItems: "center", justifyContent: "center", gap: 5,
+    paddingVertical: 11, borderRadius: 12, borderWidth: 0.5, marginTop: 2,
+  },
+  freezeBtnText: { fontSize: 14, fontWeight: "600" },
 });

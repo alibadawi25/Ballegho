@@ -21,12 +21,19 @@ import { supabase } from "@/lib/supabase";
 
 const keyOf = (itemType: string, itemKey: string) => `${itemType}:${itemKey}`;
 
+/** Server-defined; mirrored here for the UI (the RPC is the source of truth). */
+export const FREEZE_COST = 60;
+export const FREEZE_MAX  = 3;
+
 interface NurState {
   balance:    number;
+  freezes:    number;   // banked streak freezes (each protects one missed day)
   loading:    boolean;
   owns:       (itemType: string, itemKey: string) => boolean;
   awardShare: () => Promise<void>;
   unlock:     (itemType: string, itemKey: string) => Promise<boolean>;
+  /** Spend Nūr to bank a streak freeze. Returns ok + reason ("insufficient"/"max"). */
+  buyFreeze:  () => Promise<{ ok: boolean; reason?: string }>;
   reload:     () => Promise<void>;
   /** Set whenever the balance grows — drives the floating "+N" reward popup. */
   reward:     { amount: number; nonce: number } | null;
@@ -37,6 +44,7 @@ const Ctx = createContext<NurState | null>(null);
 export function NurProvider({ children }: { children: React.ReactNode }) {
   const { user } = useAuth();
   const [balance, setBalance] = useState(0);
+  const [freezes, setFreezes] = useState(0);
   const [unlocks, setUnlocks] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
 
@@ -53,12 +61,14 @@ export function NurProvider({ children }: { children: React.ReactNode }) {
   }, [balance]);
 
   const reload = useCallback(async () => {
-    if (!user) { setBalance(0); setUnlocks(new Set()); setLoading(false); return; }
-    const [{ data: pts }, { data: unl }] = await Promise.all([
+    if (!user) { setBalance(0); setFreezes(0); setUnlocks(new Set()); setLoading(false); return; }
+    const [{ data: pts }, { data: unl }, { data: streak }] = await Promise.all([
       supabase.from("user_points").select("balance").eq("user_id", user.id).maybeSingle(),
       supabase.from("user_unlocks").select("item_type, item_key").eq("user_id", user.id),
+      supabase.from("user_streaks").select("freezes").eq("user_id", user.id).maybeSingle(),
     ]);
     setBalance(pts?.balance ?? 0);
+    setFreezes(streak?.freezes ?? 0);
     setUnlocks(new Set((unl ?? []).map((u: any) => keyOf(u.item_type, u.item_key))));
     setLoading(false);
   }, [user?.id]);
@@ -87,6 +97,18 @@ export function NurProvider({ children }: { children: React.ReactNode }) {
     [unlocks],
   );
 
+  const buyFreeze = useCallback(async (): Promise<{ ok: boolean; reason?: string }> => {
+    if (!user) return { ok: false };
+    const { data, error } = await supabase.rpc("buy_streak_freeze", { p_user_id: user.id });
+    const d = data as any;
+    if (error || !d) return { ok: false };
+    if (d.ok) {
+      setBalance(d.balance);
+      setFreezes(d.freezes);
+    }
+    return { ok: !!d.ok, reason: d.reason };
+  }, [user?.id]);
+
   const unlock = useCallback(async (itemType: string, itemKey: string): Promise<boolean> => {
     if (!user) return false;
     const { data, error } = await supabase.rpc("unlock_cosmetic", {
@@ -99,7 +121,7 @@ export function NurProvider({ children }: { children: React.ReactNode }) {
   }, [user?.id]);
 
   return (
-    <Ctx.Provider value={{ balance, loading, owns, awardShare, unlock, reload, reward }}>
+    <Ctx.Provider value={{ balance, freezes, loading, owns, awardShare, unlock, buyFreeze, reload, reward }}>
       {children}
     </Ctx.Provider>
   );

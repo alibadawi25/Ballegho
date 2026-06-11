@@ -13,9 +13,11 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Platform } from "react-native";
 import type { PrayerEntry } from "@/hooks/usePrayerTimes";
 import { useLang } from "@/hooks/useLang";
+import { useSettings } from "@/contexts/SettingsContext";
 import {
   requestNotificationPermission,
   scheduleDailyNotifications,
+  cancelDailyNotifications,
 } from "@/lib/notifications";
 import { getEffectiveDate } from "@/lib/islamicDate";
 
@@ -33,7 +35,9 @@ export function useNotifications({
   prayers, currentStreak, anchorDone, anchorName, maghribTime,
 }: Options) {
   const { t, isRTL } = useLang();
-  // Track the last date we scheduled so we only do it once per day
+  const { notifPrefs } = useSettings();
+  // Track the last (date + prefs) signature we scheduled for, so we reschedule
+  // both when the Hijri day flips AND when the user changes reminder settings.
   const scheduledRef = useRef<string | null>(null);
 
   useEffect(() => {
@@ -42,14 +46,19 @@ export function useNotifications({
 
     async function setup() {
       const today = getEffectiveDate(maghribTime);
+      const sig   = `${today}|${JSON.stringify(notifPrefs)}`;
 
-      // Already scheduled today (in-memory check — fast path)
-      if (scheduledRef.current === today) return;
+      // Already scheduled for this exact day + settings (fast path)
+      if (scheduledRef.current === sig) return;
 
-      // Persist check across app restarts
       const stored = await AsyncStorage.getItem(STORAGE_KEY);
-      if (stored === today) {
-        scheduledRef.current = today;
+      if (stored === sig) { scheduledRef.current = sig; return; }
+
+      // Master switch off → clear everything and remember we did.
+      if (!notifPrefs.enabled) {
+        await cancelDailyNotifications();
+        scheduledRef.current = sig;
+        await AsyncStorage.setItem(STORAGE_KEY, sig);
         return;
       }
 
@@ -95,15 +104,16 @@ export function useNotifications({
         }
       }
 
+      // Per-type switches: a null time means "don't schedule this reminder".
       await scheduleDailyNotifications({
-        fajrTime:      fajrEntry?.time    ?? null,
-        asrTime:       asrEntry?.time     ?? null,
-        ishaTime:      ishaEntry?.time    ?? null,
-        maghribTime:   maghribEntry?.time ?? null,
+        fajrTime:      notifPrefs.morning ? fajrEntry?.time    ?? null : null,
+        asrTime:       notifPrefs.evening ? asrEntry?.time     ?? null : null,
+        ishaTime:      notifPrefs.night   ? ishaEntry?.time    ?? null : null,
+        maghribTime:   notifPrefs.streak  ? maghribEntry?.time ?? null : null,
         currentStreak,
         anchorDone,
         anchorName,
-        occasion,
+        occasion:      notifPrefs.occasion ? occasion : null,
         // Notification strings — fully localised
         fajrTitle: isRTL
           ? "بسم الله — صباح الخير"
@@ -123,15 +133,16 @@ export function useNotifications({
           : `${anchorName} · Maghrib in 90 min`,
       });
 
-      scheduledRef.current = today;
-      await AsyncStorage.setItem(STORAGE_KEY, today);
+      scheduledRef.current = sig;
+      await AsyncStorage.setItem(STORAGE_KEY, sig);
     }
 
     setup().catch(err => console.warn("[useNotifications]", err));
   }, [
     // Re-run when prayer times load, streak changes, anchor completion changes,
-    // or the Maghrib boundary crosses (effective date advances to next Islamic day).
+    // the Maghrib boundary crosses, or the user edits reminder settings.
     prayers.length, currentStreak, anchorDone, maghribTime?.getTime(),
     getEffectiveDate(maghribTime ?? null),
+    JSON.stringify(notifPrefs),
   ]);
 }
